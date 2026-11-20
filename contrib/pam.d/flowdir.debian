@@ -1,0 +1,6 @@
+# /etc/pam.d/flowdir — Debian / Ubuntu
+# Password check for the flowdir web GUI. Group membership (default group "flowdir")
+# is enforced by flowdir itself; PAM only proves who the user is and that the
+# account is valid.
+@include common-auth
+@include common-account

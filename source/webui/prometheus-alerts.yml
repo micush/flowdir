@@ -1,0 +1,117 @@
+# Example Prometheus alert rules for flowdir.  Copy this file next to prometheus.yml, list it under rule_files:, and adjust the
+# thresholds.  The first rule expects the scrape job to be called "flowdir"; change that name to match yours.
+groups:
+  - name: flowdir
+    rules:
+      - alert: FlowdirNodeDown
+        expr: up{job="flowdir"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} cannot be scraped"
+      - alert: FlowdirChronyNotRunning
+        expr: flowdir_chrony_running == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: chrony is not running"
+      - alert: FlowdirNotSynchronised
+        expr: flowdir_chrony_synchronised == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: the clock is not synchronised"
+      - alert: FlowdirClockOffset
+        expr: abs(flowdir_chrony_offset_ms) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: the clock is more than 100 ms off"
+      - alert: FlowdirHighStratum
+        expr: flowdir_chrony_stratum >= 10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: stratum {{ $value }}"
+      - alert: FlowdirNoReachableSource
+        expr: sum by (instance) (flowdir_chrony_source_reach) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: chrony has not heard from any source"
+      - alert: FlowdirNoActiveGateway
+        expr: sum by (group, af) (flowdir_gateway_active) == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No node is the active gateway of group {{ $labels.group }} ({{ $labels.af }})"
+      - alert: FlowdirGatewayNotListening
+        expr: flowdir_gateway_service_up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: the NTP listener of group {{ $labels.group }} is down"
+      - alert: FlowdirUpstreamDown
+        expr: flowdir_upstream_healthy == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: upstream server {{ $labels.server }} is down"
+      - alert: FlowdirFalseticker
+        expr: flowdir_upstream_falseticker == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: upstream server {{ $labels.server }} disagrees with the others"
+      - alert: FlowdirCriticalAlertOpen
+        expr: flowdir_alerts_active{severity="critical"} > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: a critical alert has been open for 10 minutes (see Monitor ▸ Alerts)"
+      - alert: FlowdirCertificateExpiresSoon
+        expr: flowdir_certificate_expires_in_seconds < 14 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: the {{ $labels.certificate }} certificate expires in less than 14 days"
+      - alert: FlowdirCertificateExpiresVerySoon
+        expr: flowdir_certificate_expires_in_seconds < 3 * 86400
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }}: the {{ $labels.certificate }} certificate expires in less than 3 days"
+      - alert: FlowdirHostCPU
+        expr: flowdir_host_cpu_percent > 90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: CPU above 90% for 15 minutes"
+      - alert: FlowdirHostMemory
+        expr: flowdir_host_memory_used_bytes / flowdir_host_memory_total_bytes > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: more than 90% of the memory is in use"
+      - alert: FlowdirFilesystemFull
+        expr: flowdir_host_filesystem_used_percent > 90
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }}: {{ $labels.mount }} is more than 90% full"
