@@ -5,7 +5,7 @@ From nothing to a router's flows in front of an assistant, on one node.
 ## 1. Install
 
 ```
-tar xzf flowdir_v39.tgz && cd flowdir
+tar xzf flowdir_v40.tgz && cd flowdir
 sudo ./install.sh --add-user "$USER"
 ```
 
@@ -38,7 +38,7 @@ flowdir --canvas
 
 Configure ▸ **Exporters** ▸ right-click ▸ Add row: a name, and the exporter's address, a network (`10.9.0.0/16`) or a host name. Flow packets are read only from listed exporters. The collector listens as soon as there is one.
 
-Then point the router's NetFlow, IPFIX or sFlow export at the node's address or the gateway address: UDP 2055 (NetFlow), 4739 (IPFIX) or 6343 (sFlow). The **Flow** page (the first entry of the menu) shows the traffic within a minute or two.
+Then point the router's NetFlow, IPFIX or sFlow export at the node's address or the gateway address: UDP 2055 (NetFlow), 4739 (IPFIX) or 6343 (sFlow). The **Flows** page (the first entry of the menu) shows the traffic within a minute or two.
 
 ## 4. Connect an assistant
 

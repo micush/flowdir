@@ -366,11 +366,11 @@
   // Sidebar groups: one open at a time; the group holding the current page is open.
   // Topology comes first; its items are the gateways themselves (filled in from the daemon).
   const TOPO = "Topology";
-  const FLOW = "Flow";   // its own entry above Topology: no list under it
+  const FLOW = "Flows";   // its own entry above Topology: no list under it
   const NAV_GROUPS = [
     ["Configure", [["cfg_general", "Settings"], ["cfg_groups", "Gateways"], ["cfg_mcp", "MCP"], ["cfg_privacy", "Privacy"], ["cfg_exporters", "Exporters"], ["cfg_web", "Web GUI"], ["cfg_monitoring", "Monitoring"], ["cfg_alerts", "Alerts"], ["cfg_backup", "Backup"], ["anycast", "Anycast"], ["users", "Users"]]],
     ["Operate", [["node", "Node"], ["cluster", "Cluster"], ["anycastop", "Anycast"], ["scheduler", "Scheduler"], ["history", "History"], ["updates", "Upgrade"]]],
-    ["Monitor", [["mcpusage", "MCP"], ["host", "Node"], ["gateways", "Gateways"], ["nodes", "Cluster"], ["anycaststatus", "Anycast"], ["alerts", "Alerts"], ["capture", "Capture"], ["log", "Log"]]],
+    ["Monitor", [["mcpusage", "MCP"], ["host", "Node"], ["gateways", "Gateways"], ["nodes", "Cluster"], ["exporters", "Exporters"], ["anycaststatus", "Anycast"], ["alerts", "Alerts"], ["capture", "Capture"], ["log", "Log"]]],
   ];
   const TABS = [["flow", FLOW], ["topology", TOPO]].concat(NAV_GROUPS.flatMap(([, items]) => items));
   const groupOf = (id) => (id === "flow" ? FLOW : id === "topology" ? TOPO : (NAV_GROUPS.find(([, items]) => items.some(([i]) => i === id)) || [null])[0]);
@@ -1065,7 +1065,7 @@
           label(mid, y + 32, fitPx(n.label, NW - 2 * NSL - 12, "400 11px system-ui, sans-serif"), "t2"),
           n.soak_sec > 0 ? sv("text", { x: x + NSL + 8, y: y + 17, class: "t1 soak" }, sv("title", {}, soakTip(n.soak_sec)), "⏳") : null));
       });
-      const goFlow = (x) => () => { state.prefill.flow = "exporter=" + x.addr; selectTab("flow"); };   // a click opens the Flow page on that exporter's traffic
+      const goFlow = (x) => () => { state.prefill.flow = "exporter=" + x.addr; selectTab("flow"); };   // a click opens the Flows page on that exporter's traffic
       devs.forEach((x, i) => {
         const { x: px, y } = devAt(i), mx = px + SW / 2;
         lines.push(sv("line", { x1: cx, y1: CY + R, x2: mx, y2: y, class: "edge" + (x.status === "bad" ? " down" : "") }));
@@ -4362,7 +4362,7 @@
     const rateText = (v) => (kept.metric === "bytes" ? bits(v) : plain(v, rateUnit()));
     const rowId = (g) => JSON.stringify(Object.keys(g || {}).sort().map((k) => [k, g[k]]));
 
-    let tiles, chartBox, tableBox, exBox, rangeSel, metricSel, bySel, filterIn;
+    let tiles, chartBox, tableBox, rangeSel, metricSel, bySel, filterIn;
     let lastAt = 0, seq = 0, exporters = [];
 
     // a click adds a term to the filter (AND), and moves to the next level down
@@ -4533,31 +4533,6 @@
       if (typingNow) { filterIn.focus(); try { filterIn.setSelectionRange(at0, at1); } catch (_) { /* not a text box */ } }
     }
 
-    function drawExporters() {
-      // one row per exporter: an exporter heard by two nodes (its traffic moves with the active gateway) is one, with the records added up and
-      // the nodes listed, the one that heard it last first
-      const by = new Map();
-      for (const e of exporters.slice().sort((a, b) => b.last_seen - a.last_seen)) {
-        const m = by.get(e.addr);
-        if (!m) { by.set(e.addr, { ...e, nodes: e.node ? [e.node] : [] }); continue; }
-        m.records += e.records || 0; m.datagrams += e.datagrams || 0;
-        m.first_seen = Math.min(m.first_seen || e.first_seen, e.first_seen || m.first_seen);
-        if (!m.name && e.name) m.name = e.name;
-        if (!m.sampling_rate && e.sampling_rate) m.sampling_rate = e.sampling_rate;
-        if (e.node && !m.nodes.includes(e.node)) m.nodes.push(e.node);
-      }
-      const rows = [...by.values()].map((e) => ({ ...e, node: e.nodes.join(", ") }));
-      const body = rows.length
-        ? h("div", { class: "scroll" }, h("table", {},
-          h("thead", {}, h("tr", {}, ["Exporter", "Format", "Last seen", "Records", "Sampling", "Node"].map((x, i) => h("th", { class: i === 3 || i === 4 ? "num" : "" }, x)))),
-          h("tbody", {}, rows.map((e) => h("tr", { class: Date.now() / 1000 - e.last_seen > 600 ? "muted" : "", oncontextmenu: rowMenu(netToolMenu(e.addr)) }, h("td", {}, e.name ? e.name + " " : "", h("span", { class: e.name ? "muted small mono" : "mono" }, e.addr)), h("td", {}, e.format),
-            h("td", {}, ago(e.last_seen)), h("td", { class: "num" }, count(e.records)), h("td", { class: "num" }, e.sampling_rate ? "1 in " + e.sampling_rate : "–"), h("td", { class: "mono" }, e.node || "–"))))))
-        : h("div", { class: "empty" }, "No exporter has sent anything yet.");
-      clear(exBox).append(h("div", { class: "card" }, h("header", { class: "bar" }, h("h2", {}, tc("Exporters")), h("span", { class: "grow" }),
-        rows.length ? csvButton("Flow exporters", () => [["Exporter", "Name", "Format", "First seen (UTC)", "Last seen (UTC)", "Datagrams", "Records", "Sampling", "Node"],
-          ...rows.map((e) => [e.addr, e.name || "", e.format, csvIso(e.first_seen), csvIso(e.last_seen), e.datagrams, e.records, e.sampling_rate || "", e.node || ""])]) : null), h("div", { class: "body flush" }, body)));
-    }
-
     async function load() {
       const my = ++seq;
       if (Date.now() - hoverAt > 60000) {   // settings.flow.chart_hover, read again a minute after it was last read
@@ -4573,7 +4548,6 @@
         lastAt = Date.now();
         setBad("");
         draw(rep.data);
-        drawExporters();
       } catch (e) {
         if (e.message === "unauthenticated") return;
         // the box is in the list card's header: when no report has been drawn yet, give it a header to sit in
@@ -4606,12 +4580,63 @@
           oninput: () => applyFilter(false), onkeydown: (e) => { if (e.key === "Enter") applyFilter(true); } });
         if (state.prefill.flow != null) { kept.filter = state.prefill.flow; state.prefill.flow = null; }   // sent here from the Topology page: one exporter's traffic
         filterIn.value = kept.filter;
-        tiles = h("div", { class: "qtiles" }); chartBox = h("div", {}); tableBox = h("div", {}); exBox = h("div", {});
+        tiles = h("div", { class: "qtiles" }); chartBox = h("div", {}); tableBox = h("div", {});
         // the chart is drawn at the width it has, so its text stays the size of the page's text; drawn again when that width changes
         if (window.ResizeObserver) { let tm = 0; new ResizeObserver(() => { clearTimeout(tm); tm = setTimeout(() => { if (lastR && Math.abs(chartBox.clientWidth - lastW) > 24) draw(lastR); }, 150); }).observe(chartBox); }
         const bar = h("div", { class: "toolbar qbar" },
           rangeSel, bySel, metricSel);
-                main.append(bar, tiles, h("div", { class: "hosttables flowwide" }, chartBox, tableBox, exBox));
+                main.append(bar, tiles, h("div", { class: "hosttables flowwide" }, chartBox, tableBox));
+        load();
+      },
+      async poll() { if (Date.now() - lastAt >= REFRESH_MS) await load(); },
+    };
+  })();
+
+  // ── Exporters, Monitor  (API: GET /api/flow/exporters) ───────────────────────────
+  // Who is sending flows to the cluster: one row to an exporter, its records added up across the nodes that heard it.
+  VIEWS.exporters = (() => {
+    const REFRESH_MS = 5000;
+    let box, bad, seq = 0, lastAt = 0;
+    const count = (v) => (Number(v) || 0).toLocaleString();
+    const ago = (u) => { const s = Math.max(0, Math.floor(Date.now() / 1000 - u)); return s < 90 ? s + " s ago" : s < 5400 ? Math.round(s / 60) + " min ago" : s < 172800 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago"; };
+    function draw(exporters) {
+      // one row per exporter: an exporter heard by two nodes (its traffic moves with the active gateway) is one, with the records added up and
+      // the nodes listed, the one that heard it last first
+      const by = new Map();
+      for (const e of exporters.slice().sort((a, b) => b.last_seen - a.last_seen)) {
+        const m = by.get(e.addr);
+        if (!m) { by.set(e.addr, { ...e, nodes: e.node ? [e.node] : [] }); continue; }
+        m.records += e.records || 0; m.datagrams += e.datagrams || 0;
+        m.first_seen = Math.min(m.first_seen || e.first_seen, e.first_seen || m.first_seen);
+        if (!m.name && e.name) m.name = e.name;
+        if (!m.sampling_rate && e.sampling_rate) m.sampling_rate = e.sampling_rate;
+        if (e.node && !m.nodes.includes(e.node)) m.nodes.push(e.node);
+      }
+      const rows = [...by.values()].map((e) => ({ ...e, node: e.nodes.join(", ") }));
+      const body = rows.length
+        ? h("div", { class: "scroll" }, h("table", {},
+          h("thead", {}, h("tr", {}, ["Exporter", "Format", "Last seen", "Records", "Sampling", "Node"].map((x, i) => h("th", { class: i === 3 || i === 4 ? "num" : "" }, x)))),
+          h("tbody", {}, rows.map((e) => h("tr", { class: Date.now() / 1000 - e.last_seen > 600 ? "muted" : "", oncontextmenu: rowMenu(netToolMenu(e.addr)) }, h("td", {}, e.name ? e.name + " " : "", h("span", { class: e.name ? "muted small mono" : "mono" }, e.addr)), h("td", {}, e.format),
+            h("td", {}, ago(e.last_seen)), h("td", { class: "num" }, count(e.records)), h("td", { class: "num" }, e.sampling_rate ? "1 in " + e.sampling_rate : "–"), h("td", { class: "mono" }, e.node || "–"))))))
+        : h("div", { class: "empty" }, "No exporter has sent anything yet.");
+      clear(box).append(h("div", { class: "card" }, h("header", { class: "bar" }, h("h2", {}, tc("Exporters")), h("span", { class: "grow" }),
+        rows.length ? csvButton("Flow exporters", () => [["Exporter", "Name", "Format", "First seen (UTC)", "Last seen (UTC)", "Datagrams", "Records", "Sampling", "Node"],
+          ...rows.map((e) => [e.addr, e.name || "", e.format, csvIso(e.first_seen), csvIso(e.last_seen), e.datagrams, e.records, e.sampling_rate || "", e.node || ""])]) : null), h("div", { class: "body flush" }, body)));
+    }
+    async function load() {
+      const my = ++seq;
+      try {
+        const r = await api("GET", "/api/flow/exporters");
+        if (my !== seq) return;
+        lastAt = Date.now();
+        clear(bad);
+        draw((r.data && r.data.exporters) || []);
+      } catch (e) { fail(bad)(e); }
+    }
+    return {
+      mount(main) {
+        bad = h("div", { "aria-live": "polite" }); box = h("div", {});
+        main.append(bad, box);
         load();
       },
       async poll() { if (Date.now() - lastAt >= REFRESH_MS) await load(); },

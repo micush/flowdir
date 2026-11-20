@@ -1,5 +1,17 @@
 # Changelog
 
+## [v40] - 2026-11-20 — Exporters moved to Monitor; the Flow menu is Flows
+
+### Changed
+- **The Exporters card moved from the Flow page to Monitor ▸ Exporters**, its own page with the same table, CSV download and right-click tools. The Flow page keeps the **Exporters** tile.
+- The first menu entry is **Flows** (was Flow); the help and docs say so. Settings keys and the `flow` page address are unchanged.
+
+### Verified
+- `node --check` on both scripts; the pages in headless Chromium with the CSP on: the menu reads Flows and lists Monitor ▸ Exporters, the Flows page has no Exporters card, and the new page shows the rows.
+
+### Not verified
+- Against a live daemon (the pages were run on a mock).
+
 ## [v39] - 2026-11-20 — a stale CSRF token no longer breaks a button
 
 ### Fixed

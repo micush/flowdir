@@ -34,7 +34,7 @@ What you get:
 | Area | State |
 |---|---|
 | VIP election, anycast, BGP, OSPF, LLDP, cluster, users, backups, scheduler, updates | built in |
-| Flow collector | NetFlow v5/v9, IPFIX and sFlow v5 received on the gateway addresses, rolled up per node, reported cluster-wide (`--flow-top`, MCP `flow_top`, `/api/flow/report`, **Flow** in the GUI); templates replicated between nodes |
+| Flow collector | NetFlow v5/v9, IPFIX and sFlow v5 received on the gateway addresses, rolled up per node, reported cluster-wide (`--flow-top`, MCP `flow_top`, `/api/flow/report`, **Flows** in the GUI; who is sending: **Monitor ▸ Exporters**); templates replicated between nodes |
 | Exporters | **Configure ▸ Exporters** (`settings.flow.exporters`): a name and an address, a network or a host name; anything else is refused |
 | MCP | read-only: `flow_top`, `flow_timeseries`, `flow_exporters`, `flow_status`, `list_nodes`, `get_topology` |
 | Web GUI | Flow (the default page), Topology, Monitor, Configure |
@@ -52,7 +52,7 @@ One answer to an assistant is at most 1 MB by default and is cut, with a note, b
 Supported systems are Ubuntu, Debian, Fedora, RHEL, Rocky, Alma, Arch and Manjaro, and their derivatives. flowdir is Linux-only (macvlan, AF_PACKET, inotify).
 
 ```
-tar xzf flowdir_v39.tgz && cd flowdir
+tar xzf flowdir_v40.tgz && cd flowdir
 sudo ./install.sh [--add-user NAME] [--no-start] [-y] [--dry-run]
 sudo flowdir-uninstall [--purge]
 ```
