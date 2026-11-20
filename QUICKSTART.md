@@ -5,7 +5,7 @@ From nothing to a router's flows in front of an assistant, on one node.
 ## 1. Install
 
 ```
-tar xzf flowdir_v37.tgz && cd flowdir
+tar xzf flowdir_v38.tgz && cd flowdir
 sudo ./install.sh --add-user "$USER"
 ```
 

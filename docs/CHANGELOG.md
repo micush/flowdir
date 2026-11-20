@@ -1,5 +1,10 @@
 # Changelog
 
+## [v38] - 2026-11-20 — version bump
+
+### Changed
+- Same tree as v37 (the Flow chart mouseover setting), numbered 38 on request so an installation that already has 37 takes it as an update.
+
 ## [v37] - 2026-11-20 — Configure ▸ Settings: turn off the chart's mouseover
 
 ### Added
