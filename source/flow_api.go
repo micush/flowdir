@@ -567,12 +567,16 @@ func (s *flowService) dress(a *FlowAnswer, q FlowQuery) {
 			}
 		}
 		if p, ok := r.Key["proto"]; ok {
-			n, _ := strconv.Atoi(p)
-			names["proto"] = flowProtoName(uint8(n))
-			if pt, ok := r.Key["port"]; ok && (n == 6 || n == 17) {
-				pn, _ := strconv.Atoi(pt)
-				if svc := flowServiceNames[uint16(pn)]; svc != "" {
-					names["port"] = svc
+			n64, perr := strconv.ParseUint(p, 10, 8) // out of range or not a number: no name
+			n := int(n64)
+			if perr == nil {
+				names["proto"] = flowProtoName(uint8(n64))
+			}
+			if pt, ok := r.Key["port"]; ok && perr == nil && (n == 6 || n == 17) {
+				if pn, err := strconv.ParseUint(pt, 10, 16); err == nil {
+					if svc := flowServiceNames[uint16(pn)]; svc != "" {
+						names["port"] = svc
+					}
 				}
 			}
 		}

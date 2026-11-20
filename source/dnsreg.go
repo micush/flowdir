@@ -147,7 +147,7 @@ func (c *DNSRegConfig) Validate() error {
 		if strings.ContainsAny(k, "\r\n\x00") {
 			return errors.New("dns_register: the key is not valid")
 		}
-		if st, err := os.Stat(k); err != nil || st.IsDir() { // not a file: it has to be name:secret[:algorithm]
+		if _, ok := tsigKeyFile(k); !ok { // not a file: it has to be name:secret[:algorithm]
 			if _, err := parseTSIGSpec(k); err != nil {
 				return fmt.Errorf("dns_register: the key must be the path of a BIND key file or name:base64secret[:algorithm] (%v)", err)
 			}
@@ -411,14 +411,31 @@ var (
 	keySecretRe = regexp.MustCompile(`secret\s+"([^"]+)"`)
 )
 
+// tsigKeyFile reports whether spec names an existing key file.  A path with a ".." element or a NUL is never one (it is then
+// read as name:secret and refused), so a setting cannot steer the daemon, which runs as root, out of the directory it names.
+func tsigKeyFile(spec string) (string, bool) {
+	if strings.ContainsRune(spec, 0) {
+		return "", false
+	}
+	for _, e := range strings.FieldsFunc(spec, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if e == ".." {
+			return "", false
+		}
+	}
+	if st, err := os.Stat(spec); err != nil || st.IsDir() {
+		return "", false
+	}
+	return spec, true
+}
+
 // loadTSIGKey reads the key: the path of a BIND key file, or name:base64secret[:algorithm].
 func loadTSIGKey(spec string) (*tsigKey, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
 		return nil, nil
 	}
-	if st, err := os.Stat(spec); err == nil && !st.IsDir() {
-		b, err := os.ReadFile(spec)
+	if path, ok := tsigKeyFile(spec); ok {
+		b, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}

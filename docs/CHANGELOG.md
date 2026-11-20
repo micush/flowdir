@@ -1,5 +1,21 @@
 # Changelog
 
+## [v41] - 2026-11-20 — CodeQL alerts: integer conversions and key-file path
+
+### Fixed
+- **Incorrect conversion between integer types (flow_api.go, alerts #3 and #4).** The protocol and port of a flow row were parsed with `strconv.Atoi` and narrowed to `uint8` / `uint16` without a range check, so a value out of range wrapped around and could name the wrong protocol or service. They are now parsed with `ParseUint` at 8 and 16 bits; a value that is not a number or does not fit gets no name.
+- **Uncontrolled data used in a path expression (dnsreg.go, alert #5).** The DNS-registration key setting is either a key-file path or `name:secret`; the path was handed to `os.Stat` and `os.ReadFile` as it came. A new `tsigKeyFile` refuses a path with a `..` element or a NUL byte (it is then read as `name:secret` and rejected as before); validation and loading both use it. Ordinary absolute and relative paths behave as before.
+
+### Not changed
+- **Insecure TLS configuration / Disabled TLS certificate check (netprobe.go, alerts #2 and #6; ldap.go, alert #1).** Left as they are on purpose. The TLS probe in `netprobe.go` is a diagnostic: it must complete a handshake with a server whose certificate is bad, or whose TLS is old, to report that, and it verifies the chain itself afterwards (`trusted`, `verify_error`). The LDAP one is the administrator's explicit "Do not check the server's certificate" option, off by default and logged once an hour. These alerts should be dismissed in GitHub as "won't fix" with that reason, not silenced in code.
+
+### Verified
+- `gofmt -l .` empty; `go build`, `go vet ./...`, `go test -race -count=1 ./...` and `CGO_ENABLED=0 go vet` / `go test` all pass (native amd64 with PAM headers); the new `TestTSIGKeyFileRefusesTraversal` covers a plain path, `..` in two forms, a NUL, a directory and a missing file.
+- Cross-compiled (cgo off, so the PAM stub) for linux/amd64, arm64, arm, 386 and riscv64.
+
+### Not verified
+- CodeQL was not run here: whether GitHub closes alerts #3 to #5 on the next scan is not confirmed. No live daemon was started: the changes are in the flow report names and in key loading, and only the unit tests ran them.
+
 ## [v40] - 2026-11-20 — Exporters moved to Monitor; the Flow menu is Flows
 
 ### Changed
