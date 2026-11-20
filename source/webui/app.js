@@ -210,7 +210,21 @@
     if (!state.target || LOCAL_API.test(path)) return path;
     return "/api/proxy?node=" + encodeURIComponent(state.target) + "&path=" + encodeURIComponent(path);
   }
-  async function api(method, path, body, local) {
+  // The token this tab holds can go stale while the session lives on: the cookie is shared by every tab, so a sign-in in another tab
+  // (or a node that restarted and was signed in to again) leaves this one with a token the daemon no longer accepts.  The daemon answers
+  // 403 "missing or invalid CSRF token"; ask who we are now, take the current token and send the request once more.
+  const csrfRefused = (res, data) => res.status === 403 && data && /CSRF token/.test(data.error || "");
+  async function refreshCsrf() {
+    try {
+      const r = await fetch("/api/session", { credentials: "same-origin" });
+      if (!r.ok) return false;
+      const j = await r.json();
+      if (!j || !j.csrf || !state.session || j.csrf === state.session.csrf) return false;
+      state.session.csrf = j.csrf;
+      return true;
+    } catch (_) { return false; }
+  }
+  async function api(method, path, body, local, retried) {
     const orig = path;
     if (!local) path = route(path);
     const headers = {};
@@ -228,6 +242,7 @@
       showLogin();
       throw new Error("unauthenticated");
     }
+    if (!retried && method !== "GET" && csrfRefused(res, data) && await refreshCsrf()) return api(method, orig, body, local, true);
     if (!res.ok) {
       const err = new Error((data && data.error) || res.statusText || "request failed");
       err.status = res.status;
@@ -238,7 +253,7 @@
   }
 
   // Upload raw bytes (release archive); the CSRF token still applies.
-  async function apiUpload(path, file) {
+  async function apiUpload(path, file, retried) {
     const res = await fetch(route(path), {
       method: "POST", credentials: "same-origin",
       headers: { "Content-Type": "application/octet-stream", "X-CSRF-Token": state.session.csrf },
@@ -247,6 +262,7 @@
     let data = null;
     try { data = await res.json(); } catch (_) { /* non-JSON error */ }
     if (res.status === 401) { stopAllTimers(); state.session = null; showLogin(); throw new Error("unauthenticated"); }
+    if (!retried && csrfRefused(res, data) && await refreshCsrf()) return apiUpload(path, file, true);
     if (!res.ok) throw new Error((data && data.error) || res.statusText || "upload failed");
     return data;
   }

@@ -52,7 +52,7 @@ One answer to an assistant is at most 1 MB by default and is cut, with a note, b
 Supported systems are Ubuntu, Debian, Fedora, RHEL, Rocky, Alma, Arch and Manjaro, and their derivatives. flowdir is Linux-only (macvlan, AF_PACKET, inotify).
 
 ```
-tar xzf flowdir_v38.tgz && cd flowdir
+tar xzf flowdir_v39.tgz && cd flowdir
 sudo ./install.sh [--add-user NAME] [--no-start] [-y] [--dry-run]
 sudo flowdir-uninstall [--purge]
 ```

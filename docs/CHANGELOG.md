@@ -1,5 +1,16 @@
 # Changelog
 
+## [v39] - 2026-11-20 — a stale CSRF token no longer breaks a button
+
+### Fixed
+- **"missing or invalid CSRF token" on Upgrade ▸ Upload ▸ Fetch from online (and any other button).** The page's token belongs to the sign-in it made, but the session cookie is shared by every tab of the browser: signing in again (in another tab, or after the daemon dropped the session and a login was made elsewhere) leaves the first tab with a token the daemon refuses, and its next change failed with that message. The page now takes that answer as a cue to ask the daemon who it is signed in as, takes the current token and sends the request once more (also for the release upload). A real CSRF failure still shows: the retry happens once, and only when the daemon's token differs from the page's.
+
+### Verified
+- Reproduced in headless Chromium against the real GUI code and the test server: sign in, open Upgrade, sign in again from a second tab (the cookie changes), tick Fetch from online and press Upload. Before the change that request is the 403 above; now it is refused once, repeated with the new token and answers 200 ("Staged v7"). Also checked that the normal case sends a single request, and that a relayed request (through another node) takes the same path. `node --check`.
+
+### Not verified
+- Whether this is what happened on your cluster. I could not make the fetch fail any other way: the single-node path and the relay-to-another-node path both answer 200 with a valid token. If it still fails after this, the message will name another cause: tell me what the Log page (Monitor ▸ Log) says at that moment.
+
 ## [v38] - 2026-11-20 — version bump
 
 ### Changed
