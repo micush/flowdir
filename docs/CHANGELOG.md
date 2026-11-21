@@ -1,5 +1,11 @@
 # Changelog
 
+## [v48] - 2026-11-21 — README rewritten, screenshots added
+
+### Changed
+
+- **README** rewritten in plainer words, with screenshots of the real GUI from `snaps/`. The screenshots use sample data (made-up hosts, `example.net` names). The old Network Director images in `snaps/` are gone.
+
 ## [v47] - 2026-11-21 — Flows: opens on the last 15 minutes
 
 ### Changed
