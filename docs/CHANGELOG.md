@@ -1,5 +1,11 @@
 # Changelog
 
+## [v46] - 2026-11-21 — Exporters: pick one exporter in the chart
+
+### Changed
+
+- On **Monitor ▸ Exporters**, the pills of the **Top exporters** chart are under the chart, and a click on a pill shows that exporter alone (the scale follows it); a second click on it shows them all again. The choice stays through the page's refreshes. The chart's CSV still holds every exporter.
+
 ## [v45] - 2026-11-21 — Flows: interface names
 
 ### Added

@@ -4012,6 +4012,7 @@
   // ── Node, Monitor  (CLI: --host) ─────────────────────────────────────────────
   // CPU, memory, disk and network use of the machine, sampled every 10 s by the daemon and
   // kept in memory for 30 days.  The picked node (top-bar Node menu) is the one shown.
+  const expPick = { sel: null };   // the exporter the Exporters page's Top exporters chart is narrowed to (null: all)
   const QCHARTS = {};   // the Node page's line chart, which the Exporters page draws its charts with
   VIEWS.host = (() => {
     const SVGNS = "http://www.w3.org/2000/svg";
@@ -4044,8 +4045,19 @@
     let status, bar, cnote, tiles, charts, tables, neigh, foot, rangeBtns, fromIn, toIn, customRow;
     let range = "1h", lastAt = 0, seq = 0;
 
-    // One line chart: series = [{ label, cls, values, text(i) }]; values below 0 are gaps.
-    function lineChart(title, d, series, o) {
+    // One line chart: series = [{ label, cls, values, text(i) }]; values below 0 are gaps.  With o.pick ({ sel }, kept by the caller so a
+    // refresh keeps it) a click on a legend pill shows that series alone, and a second click on it shows them all again.
+    function lineChart(title, d, all, o) {
+      if (!o.pick) return drawLine(title, d, all, o, null);
+      let card;
+      const make = () => {
+        const sel = all.find((s) => s.label === o.pick.sel) || null;   // the first of that name, should two series share one
+        const pick = { all, sel, set: (s) => { o.pick.sel = sel === s ? null : s.label; const nc = make(); card.replaceWith(nc); card = nc; } };
+        return drawLine(title, d, sel ? [sel] : all, o, pick);
+      };
+      return (card = make());
+    }
+    function drawLine(title, d, series, o, pick) {
       const n = d.n != null ? d.n : d.cpu.length;
       const peak = Math.max(0, ...series.flatMap((s) => s.values));
       const max = o.fixedMax || niceMax(peak, o.floor || 10);
@@ -4089,14 +4101,17 @@
         },
         onmouseleave: () => { cross.classList.add("hidden"); tip.classList.add("hidden"); dots.forEach((c) => c.classList.add("hidden")); } });
       svg.append(cross, ...dots, hit, tip);
-      const legend = series.length > 1 || o.legend ? h("div", { class: "qlegend" }, series.map((s) => h("span", { class: "qchip " + s.cls }, h("span", { class: "sw" }), s.label))) : null;
+      const legend = series.length > 1 || o.legend ? h("div", { class: "qlegend" }, (pick ? pick.all : series).map((s) => pick
+        ? h("button", { type: "button", class: "qchip solo " + s.cls, title: pick.sel === s ? "Show all" : "Show only " + s.label, "aria-pressed": pick.sel == null ? null : String(pick.sel === s), onclick: () => pick.set(s) }, h("span", { class: "sw" }), s.label)
+        : h("span", { class: "qchip " + s.cls }, h("span", { class: "sw" }), s.label))) : null;
       // the chart's numbers: one row per sample, the busiest sample of the interval beside the average where there is one; a gap is an empty cell
       const sampleRows = () => {
+        const ss = pick ? pick.all : series;
         const cell = (v) => (v < 0 ? "" : csvNum(v));
-        return [["Time (UTC)", ...series.flatMap((s) => [s.label + " (" + o.unit + ")", ...(s.peaks ? [s.label + " peak (" + o.unit + ")"] : [])])],
-          ...Array.from({ length: n }, (_, i) => [csvIso(d.start + i * d.step), ...series.flatMap((s) => [cell(s.values[i]), ...(s.peaks ? [cell(s.peaks[i])] : [])])])];
+        return [["Time (UTC)", ...ss.flatMap((s) => [s.label + " (" + o.unit + ")", ...(s.peaks ? [s.label + " peak (" + o.unit + ")"] : [])])],
+          ...Array.from({ length: n }, (_, i) => [csvIso(d.start + i * d.step), ...ss.flatMap((s) => [cell(s.values[i]), ...(s.peaks ? [cell(s.peaks[i])] : [])])])];
       };
-      return h("div", { class: "card" }, h("header", { class: "bar" }, h("h2", {}, tc(title)), h("span", { class: "grow" }), csvButton(title, sampleRows)), h("div", { class: "body" }, legend, svg));
+      return h("div", { class: "card" }, h("header", { class: "bar" }, h("h2", {}, tc(title)), h("span", { class: "grow" }), csvButton(title, sampleRows)), h("div", { class: "body" }, o.legendBelow ? null : legend, svg, o.legendBelow ? legend : null));
     }
 
     QCHARTS.lineChart = lineChart;
@@ -4696,7 +4711,7 @@
       const cls = ["t1", "t2", "t3", "t4", "t5"], fmt = (v) => (v >= 100 ? Math.round(v) : v.toFixed(v < 10 ? 1 : 0)).toLocaleString();
       clear(chartsEl).append(
         QCHARTS.lineChart("Traffic", d, [{ label: "All exporters", cls: "t7", values: bps, text: (i) => bits(bps[i]) }], { unit: "bits/s", floor: 1000, axis: (v) => bits(v) }),
-        QCHARTS.lineChart("Top exporters", d, topS.map((x, k) => { const v = dense(sl, x.points, (p) => p.bytes * 8 / step); return { label: nameOf(x.group.exporter), cls: cls[k], values: v, text: (i) => bits(v[i]) }; }), { unit: "bits/s", floor: 1000, axis: (v) => bits(v), legend: true }),
+        QCHARTS.lineChart("Top exporters", d, topS.map((x, k) => { const v = dense(sl, x.points, (p) => p.bytes * 8 / step); return { label: nameOf(x.group.exporter), cls: cls[k], values: v, text: (i) => bits(v[i]) }; }), { unit: "bits/s", floor: 1000, axis: (v) => bits(v), legend: true, legendBelow: true, pick: expPick }),
         QCHARTS.lineChart("Flows per minute", d, [{ label: "All exporters", cls: "t5", values: fpm, text: (i) => fmt(fpm[i]) + " per minute" }], { unit: "flows per minute", floor: 10, axis: (v) => (Number.isInteger(v) ? v : v.toFixed(1)).toLocaleString() }),
         QCHARTS.lineChart("Exporters heard", d, [{ label: "Exporters", cls: "t1", values: heard, text: (i) => count(heard[i]) + (heard[i] === 1 ? " exporter" : " exporters") }], { unit: "exporters", floor: 4, axis: (v) => (Number.isInteger(v) ? v : v.toFixed(1)) }));
     }
