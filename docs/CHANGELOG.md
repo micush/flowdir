@@ -1,5 +1,12 @@
 # Changelog
 
+## [v49] - 2026-11-21 — Faster cold reports, and a memory limit for the runtime
+
+### Changed
+
+- **Reports over many hours are 10–20% faster and allocate about 11% less.** The per-hour accumulators start at a size near what they end at instead of growing from 8, and the "biggest groups of each hour" step finds the n-th biggest value by selection instead of sorting three lists of every group. The answers are the same (a test checks the selection against sorting, and the parallel-equals-serial tests still pass). On the 300-hour benchmarks: host report 425 → 384 ms, first run 1.46 → 1.15 s, conversation report 288 → 249 ms.
+- **Go's memory limit is set to 5 points above the rollups' memory cap** (95% of the machine's or cgroup's memory with the default 90%, at most 97%). The collector now works harder as the process nears what the machine allows, so one big report can't push it past that and get it killed. `GOMEMLIMIT` in the environment overrides it. The cap itself is unchanged.
+
 ## [v48] - 2026-11-21 — README rewritten, screenshots added
 
 ### Changed

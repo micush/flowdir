@@ -143,6 +143,7 @@ func (s *flowService) applyCaps() {
 	c := s.config()
 	s.store.SetCap(c.DirMaxPercent, 0)
 	s.store.SetMemCap(c.MemMaxPercent, 0)
+	applyGoMemLimit(machineMemory(), c.MemMaxPercent)
 }
 
 // Start opens the store and runs the loops.

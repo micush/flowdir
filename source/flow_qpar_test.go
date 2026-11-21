@@ -3,9 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/netip"
 	"reflect"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 )
@@ -409,5 +411,28 @@ func TestRealHistoryWithAMemoryCapLeavesOlderHoursOnDisk(t *testing.T) {
 	}
 	if s2.oldest() > tNow.Add(-5*time.Hour).Unix()/3600*3600 {
 		t.Errorf("oldest %d does not reach the hours on disk", s2.oldest())
+	}
+}
+
+func TestNthLargest(t *testing.T) {
+	r := rand.New(rand.NewSource(7))
+	for _, size := range []int{1, 2, 3, 10, 1001, 5000} {
+		for _, spread := range []uint64{3, 50, 1 << 40} { // many equal values, some, none
+			x := make([]uint64, size)
+			for i := range x {
+				x[i] = r.Uint64() % spread
+			}
+			for _, n := range []int{1, 2, size / 2, size} {
+				if n < 1 || n > size {
+					continue
+				}
+				s := slices.Clone(x)
+				slices.Sort(s)
+				want := s[len(s)-n]
+				if got := nthLargest(slices.Clone(x), n); got != want {
+					t.Fatalf("size %d spread %d n %d: %d, want %d", size, spread, n, got, want)
+				}
+			}
+		}
 	}
 }

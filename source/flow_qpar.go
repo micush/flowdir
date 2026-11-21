@@ -20,7 +20,6 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -77,6 +76,7 @@ type qAcc struct {
 	small        map[uint32]flowVal        // service (port<<8|proto), protocol, src_as, dst_as
 	tot          map[int64]flowVal         // a series: the total in each slot
 	per          map[groupKey]map[int64]flowVal
+	hint         int  // keys in the bucket the next maps are made for: they start at a size near what they end up at, not at 8
 	approx       bool // something was left out (an hour was cut, or only an hour's biggest groups were kept)
 }
 
@@ -183,12 +183,12 @@ func accBucket(a *qAcc, b *flowBucket, q *FlowQuery, lose map[flowLoser]struct{}
 	switch kind {
 	case byHost, bySrc, byDst, byExporter:
 		if a.addr == nil {
-			a.addr = map[netip.Addr]flowVal{}
+			a.addr = make(map[netip.Addr]flowVal, a.hint/4)
 		}
 		am = a.addr
 	case byConv:
 		if a.pair == nil {
-			a.pair = map[[2]netip.Addr]flowVal{}
+			a.pair = make(map[[2]netip.Addr]flowVal, a.hint/2)
 		}
 		pm = a.pair
 	case byService, byProtocol, bySrcAS, byDstAS:
@@ -324,10 +324,7 @@ func truncMap[K comparable](m map[K]flowVal, n int) bool {
 	for _, v := range m {
 		bs, ps, fs = append(bs, v.Bytes), append(ps, v.Packets), append(fs, v.Flows)
 	}
-	nth := func(x []uint64) uint64 { // the n-th biggest
-		slices.Sort(x)
-		return x[len(x)-n]
-	}
+	nth := func(x []uint64) uint64 { return nthLargest(x, n) }
 	tb, tp, tf := nth(bs), nth(ps), nth(fs)
 	nf := 0
 	for _, f := range fs {
@@ -343,6 +340,50 @@ func truncMap[K comparable](m map[K]flowVal, n int) bool {
 		delete(m, k)
 	}
 	return true
+}
+
+// nthLargest is the n-th biggest of x (1 = the biggest), found by selection, not by sorting all of x: about 3 passes instead of
+// m log m steps.  x is reordered.  The same value as sorting and indexing from the end gives.
+func nthLargest(x []uint64, n int) uint64 {
+	k := len(x) - n // index of the answer in ascending order
+	lo, hi := 0, len(x)-1
+	for lo < hi {
+		// median of three as the pivot
+		mid := lo + (hi-lo)/2
+		if x[mid] < x[lo] {
+			x[mid], x[lo] = x[lo], x[mid]
+		}
+		if x[hi] < x[lo] {
+			x[hi], x[lo] = x[lo], x[hi]
+		}
+		if x[hi] < x[mid] {
+			x[hi], x[mid] = x[mid], x[hi]
+		}
+		p := x[mid]
+		i, j := lo, hi
+		for i <= j {
+			for x[i] < p {
+				i++
+			}
+			for x[j] > p {
+				j--
+			}
+			if i <= j {
+				x[i], x[j] = x[j], x[i]
+				i++
+				j--
+			}
+		}
+		switch {
+		case k <= j:
+			hi = j
+		case k >= i:
+			lo = i
+		default:
+			return x[k]
+		}
+	}
+	return x[k]
 }
 
 func (a *qAcc) truncate(n int) {
@@ -659,6 +700,7 @@ func (s *flowStore) accumulate(q *FlowQuery, lose map[flowLoser]struct{}, step i
 		}
 		if ck != nil && t.span == 3600 {
 			p := newQAcc(0)
+			p.hint = len(b.M)
 			accBucket(p, b, q, lose, 0)
 			if useTrunc {
 				p.truncate(truncN)
