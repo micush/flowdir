@@ -4735,7 +4735,10 @@
         if (!m.sampling_rate && e.sampling_rate) m.sampling_rate = e.sampling_rate;
         if (e.node && !m.nodes.includes(e.node)) m.nodes.push(e.node);
       }
-      rows = [...by.values()].map((e) => ({ ...e, node: e.nodes.join(", ") }));
+      // alphabetical by the name shown in the first column (10.0.0.2 before 10.0.0.10), then by address
+      const nm = (e) => String(e.host || e.name || e.addr || "");
+      rows = [...by.values()].map((e) => ({ ...e, node: e.nodes.join(", ") }))
+        .sort((a, b) => nm(a).localeCompare(nm(b), undefined, { numeric: true, sensitivity: "base" }) || String(a.addr).localeCompare(String(b.addr), undefined, { numeric: true }));
       if (!card) box.append(build());
       render();
       if (rep) drawReports();   // the names and the silent count come from this list
