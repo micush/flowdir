@@ -4356,7 +4356,7 @@
     const TOP = 8;   // the groups the chart draws; the rest of the traffic is "Other"
     const REFRESH_MS = 15000;
     // what the page keeps when it is left and come back to
-    const kept = { range: "1h", by: "conversation", metric: "bytes", filter: "" };
+    const kept = { range: "15m", by: "conversation", metric: "bytes", filter: "" };
 
     const bytes = (v) => { let f = Number(v) || 0; for (const u of ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]) { if (f < 1024 || u === "PiB") return (u === "B" ? f : f.toFixed(f < 10 ? 2 : 1)) + " " + u; f /= 1024; } return ""; };
     const bits = (v) => (v >= 1e9 ? (v / 1e9).toFixed(2) + " Gb/s" : v >= 1e6 ? (v / 1e6).toFixed(v >= 1e8 ? 0 : 2) + " Mb/s" : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e5 ? 0 : 1) + " kb/s" : Math.round(v) + " b/s");

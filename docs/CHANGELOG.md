@@ -1,5 +1,11 @@
 # Changelog
 
+## [v47] - 2026-11-21 — Flows: opens on the last 15 minutes
+
+### Changed
+
+- **Monitor ▸ Flows** opens on **15 Min**, not 1 Hour. The other ranges are one choice away, and the page keeps the one you pick while you stay on it.
+
 ## [v46] - 2026-11-21 — Exporters: pick one exporter in the chart
 
 ### Changed
