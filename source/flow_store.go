@@ -42,7 +42,7 @@ type FlowConfig struct {
 	// reports and the exporter= filter call it; a network's name stands for every address in it.
 	Exporters []FlowExporterCfg `json:"exporters,omitempty"`
 	// Caps (shared): the flow folder may use this percentage (0 = the default, 90) of the volume it is on, and the rollups this
-	// percentage (0 = the default, 90) of the machine's memory (the cgroup limit when that is smaller).  At a cap the oldest
+	// percentage (0 = the default, 70) of the machine's memory (the cgroup limit when that is smaller).  At a cap the oldest
 	// files, or the oldest buckets in memory, go first.  Each node applies them to its own volume and memory.
 	DirMaxPercent int `json:"dir_max_percent,omitempty"`
 	MemMaxPercent int `json:"mem_max_percent,omitempty"`
@@ -130,7 +130,7 @@ func (c *FlowConfig) Validate() error {
 		return fmt.Errorf("flow: the disk cap is 1 to 100 percent (0 = the default, 90)")
 	}
 	if c.MemMaxPercent < 0 || c.MemMaxPercent > 100 {
-		return fmt.Errorf("flow: the memory cap is 1 to 100 percent (0 = the default, 90)")
+		return fmt.Errorf("flow: the memory cap is 1 to 100 percent (0 = the default, 70)")
 	}
 	seen := map[string]bool{}
 	for i, e := range c.Exporters {
@@ -302,7 +302,7 @@ const defaultFlowDirPercent = 90
 const (
 	flowKeyBytes    = 220
 	flowBucketBytes = 256
-	defaultMemPct   = 90
+	defaultMemPct   = 70
 )
 
 // machineMemory is the memory this process may use: the machine's, or the cgroup's limit when that is smaller.
@@ -317,7 +317,7 @@ func machineMemory() uint64 {
 	return total
 }
 
-// SetMemCap sets the cap on memory: pct percent of the machine's memory (0 = 90), or mb megabytes when that is set.
+// SetMemCap sets the cap on memory: pct percent of the machine's memory (0 = 70), or mb megabytes when that is set.
 func (s *flowStore) SetMemCap(pct, mb int) {
 	s.mu.Lock()
 	s.memPct, s.memMB = pct, mb

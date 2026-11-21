@@ -878,8 +878,8 @@ func TestFlowMemCapIsFIFO(t *testing.T) {
 	s.mu.Lock()
 	s.enforceMemLocked(tNow)
 	s.mu.Unlock()
-	if len(s.min) != 10 || len(s.hour) != 1 || s.memCap != (1<<30)/100*90 {
-		t.Fatalf("a store within the default 90%% lost buckets or got the wrong cap: %d min %d hour cap %d", len(s.min), len(s.hour), s.memCap)
+	if len(s.min) != 10 || len(s.hour) != 1 || s.memCap != (1<<30)/100*defaultMemPct {
+		t.Fatalf("a store within the default cap lost buckets or got the wrong cap: %d min %d hour cap %d", len(s.min), len(s.hour), s.memCap)
 	}
 	// room for 6 buckets: the hourly one (oldest) goes first, then the oldest minutes; the newest minute stays
 	s.memTotal = func() uint64 { return (per*6 + per/2) * 2 } // 50% of this is six and a half buckets

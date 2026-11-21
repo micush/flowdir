@@ -1,5 +1,12 @@
 # Changelog
 
+## [v50] - 2026-11-21 — Memory cap defaults to 70%
+
+### Changed
+
+- **The default Memory cap is 70% of the machine's (or container's) memory, down from 90%.** At 90% a full cache or set of rollups left too little room for searches, reports, the Go runtime and the OS, and a container with no swap would kill the process. The rollups now stops growing at 70%; Go's own memory limit follows at 75%. Older data is read from disk, only slower. The Memory cap field in Configure ▸ Settings ▸ General shows 70.
+- **A cap you saved as an explicit number other than 90 is kept.** A cap that was left at the old default of 90 (never saved, or saved as 90 and so stored as no value) now means 70. To keep 90, set it to 90 again after the update: the field then stores the value.
+
 ## [v49] - 2026-11-21 — Faster cold reports, and a memory limit for the runtime
 
 ### Changed

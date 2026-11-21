@@ -1981,7 +1981,7 @@
     { shared: true, k: "chart_hover", l: "Chart mouseover", t: "bool" },
     { k: "flow_dir", l: "Storage folder", t: "text", hint: "This node only. Applied at restart." },
     { shared: true, k: "dir_max_percent", l: "Disk cap", unit: "%", t: "int", min: 1, max: 100, def: 90 },
-    { shared: true, k: "mem_max_percent", l: "Memory cap", unit: "%", t: "int", min: 1, max: 100, def: 90 },
+    { shared: true, k: "mem_max_percent", l: "Memory cap", unit: "%", t: "int", min: 1, max: 100, def: 70 },
   ];
   const LLDP_FIELDS = [
     { shared: true, k: "lldp", l: "Run LLDP on every node", t: "bool" },
@@ -3056,7 +3056,7 @@
       const lldp = fieldset(LLDP_FIELDS, { lldp: !!set.lldp });
       const topo = fieldset(TOPO_FIELDS, { topology_squares_above: set.topology_squares_above });
       const topoShared = () => { const n = topo.get().topology_squares_above; return n > 0 && n !== 36 ? { topology_squares_above: n } : {}; };
-      const flowSet = fieldset(FLOW_FIELDS, { flow_dir: cfg.flow_dir || "", dedupe: !set.flow || set.flow.dedupe !== false, chart_hover: !set.flow || set.flow.chart_hover !== false, dir_max_percent: (set.flow || {}).dir_max_percent || 90, mem_max_percent: (set.flow || {}).mem_max_percent || 90 });
+      const flowSet = fieldset(FLOW_FIELDS, { flow_dir: cfg.flow_dir || "", dedupe: !set.flow || set.flow.dedupe !== false, chart_hover: !set.flow || set.flow.chart_hover !== false, dir_max_percent: (set.flow || {}).dir_max_percent || 90, mem_max_percent: (set.flow || {}).mem_max_percent || 70 });
       // settings.flow has other fields (enabled, max_keys, ...) that this page has no boxes for: they are carried through as they were; the exporters
       // and an unticked dedupe box are written
       // the folder in use is the value shown, not an empty box: asked of the node being configured (a proxied call when another node is picked)
@@ -3073,10 +3073,10 @@
       })();
       const flowShared = () => {
         const exp = exporters.get().exporters || [];
-        if (!set.flow && flowSet.get().dedupe && flowSet.get().chart_hover && !exp.length && Number(flowSet.get().dir_max_percent) === 90 && Number(flowSet.get().mem_max_percent) === 90) return {};
+        if (!set.flow && flowSet.get().dedupe && flowSet.get().chart_hover && !exp.length && Number(flowSet.get().dir_max_percent) === 90 && Number(flowSet.get().mem_max_percent) === 70) return {};
         const { dedupe, chart_hover: _h, exporters: _old, dir_max_percent: _d, mem_max_percent: _m, ...rest } = set.flow || {};
-        const fv = flowSet.get(), cap = (v) => (Number(v) > 0 && Number(v) !== 90 ? Math.min(100, Math.floor(Number(v))) : 0);
-        return { flow: { ...rest, ...(cap(fv.dir_max_percent) ? { dir_max_percent: cap(fv.dir_max_percent) } : {}), ...(cap(fv.mem_max_percent) ? { mem_max_percent: cap(fv.mem_max_percent) } : {}), ...(exp.length ? { exporters: exp } : {}), ...(flowSet.get().dedupe ? {} : { dedupe: false }), ...(flowSet.get().chart_hover ? {} : { chart_hover: false }) } };
+        const fv = flowSet.get(), cap = (v, d = 90) => (Number(v) > 0 && Number(v) !== d ? Math.min(100, Math.floor(Number(v))) : 0);
+        return { flow: { ...rest, ...(cap(fv.dir_max_percent) ? { dir_max_percent: cap(fv.dir_max_percent) } : {}), ...(cap(fv.mem_max_percent, 70) ? { mem_max_percent: cap(fv.mem_max_percent, 70) } : {}), ...(exp.length ? { exporters: exp } : {}), ...(flowSet.get().dedupe ? {} : { dedupe: false }), ...(flowSet.get().chart_hover ? {} : { chart_hover: false }) } };
       };
       const priv = privacyForm(set.privacy);
       const privShared = () => { const p = priv.get(); return p ? { privacy: p } : {}; };
