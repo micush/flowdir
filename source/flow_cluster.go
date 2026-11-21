@@ -25,6 +25,7 @@ import (
 type flowTmplMsg struct {
 	Templates []*FlowTemplate `json:"templates,omitempty"`
 	Rates     []FlowRate      `json:"rates,omitempty"`
+	IfNames   []FlowIfName    `json:"ifnames,omitempty"`
 }
 
 type flowQueryMsg struct {
@@ -53,6 +54,7 @@ func (c *Cluster) handleFlowTemplates(rw http.ResponseWriter, r *http.Request, c
 		return
 	}
 	flowSvc.tmpls.Import(m.Templates, m.Rates)
+	flowSvc.tmpls.ImportIfNames(m.IfNames)
 	rw.Header().Set("Content-Type", "application/json")
 	rw.Write([]byte(`{}`))
 }
@@ -63,7 +65,7 @@ func (c *Cluster) handleFlowTemplatesGet(rw http.ResponseWriter, r *http.Request
 		return
 	}
 	ts, rs := flowSvc.tmpls.Snapshot()
-	b, _ := json.Marshal(flowTmplMsg{Templates: ts, Rates: rs})
+	b, _ := json.Marshal(flowTmplMsg{Templates: ts, Rates: rs, IfNames: flowSvc.tmpls.SnapshotIfNames()})
 	rw.Header().Set("Content-Type", "application/json")
 	rw.Write(b)
 }
@@ -123,7 +125,7 @@ func (s *flowService) otherPeers() []ClusterPeer {
 func (s *flowService) replicate(ctx context.Context) {
 	var msg flowTmplMsg
 	flush := func() {
-		if len(msg.Templates)+len(msg.Rates) == 0 {
+		if len(msg.Templates)+len(msg.Rates)+len(msg.IfNames) == 0 {
 			return
 		}
 		m := msg
@@ -145,7 +147,10 @@ func (s *flowService) replicate(ctx context.Context) {
 			if l.R != nil {
 				msg.Rates = append(msg.Rates, *l.R)
 			}
-			if len(msg.Templates)+len(msg.Rates) >= 200 {
+			if l.N != nil {
+				msg.IfNames = append(msg.IfNames, *l.N)
+			}
+			if len(msg.Templates)+len(msg.Rates)+len(msg.IfNames) >= 200 {
 				flush()
 			}
 		case <-t.C:
@@ -181,6 +186,7 @@ func (s *flowService) pullTemplates(ctx context.Context) {
 				continue
 			}
 			s.tmpls.Import(m.Templates, m.Rates)
+			s.tmpls.ImportIfNames(m.IfNames)
 			done[p.NodeID] = true
 			infof("flow: took %d templates from %s", len(m.Templates), p.Addr)
 		}

@@ -88,6 +88,7 @@ type flowService struct {
 type flowLearn struct {
 	T *FlowTemplate
 	R *FlowRate
+	N *FlowIfName
 }
 
 // flowSvc is this node's collector (nil in a test that has none).
@@ -112,8 +113,15 @@ func newFlowService(sup *Supervisor, mg *Mgmt) *flowService {
 	s.tmpls.OnLearn = func(t *FlowTemplate, r *FlowRate) {
 		s.tmplDirty.Store(true)
 		select {
-		case s.learnCh <- flowLearn{t, r}:
+		case s.learnCh <- flowLearn{T: t, R: r}:
 		default: // full: the next full pull (a node that restarts) repairs what is missed
+		}
+	}
+	s.tmpls.OnLearnIfName = func(n FlowIfName) {
+		s.tmplDirty.Store(true)
+		select {
+		case s.learnCh <- flowLearn{N: &n}:
+		default:
 		}
 	}
 	return s

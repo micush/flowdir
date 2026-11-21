@@ -587,6 +587,17 @@ func (s *flowService) dress(a *FlowAnswer, q FlowQuery) {
 				}
 			}
 		}
+		if e, ok := r.Key["exporter"]; ok {
+			if ix, ok := r.Key["ifindex"]; ok {
+				if x, err := netip.ParseAddr(e); err == nil {
+					if n, err := strconv.ParseUint(ix, 10, 32); err == nil {
+						if nm := s.tmpls.ifName(x, uint32(n)); nm != "" {
+							names["interface"] = nm
+						}
+					}
+				}
+			}
+		}
 		if p, ok := r.Key["proto"]; ok {
 			n64, perr := strconv.ParseUint(p, 10, 8) // out of range or not a number: no name
 			n := int(n64)

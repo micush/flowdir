@@ -13,6 +13,7 @@ import (
 type flowTmplFile struct {
 	Templates []*FlowTemplate `json:"templates"`
 	Rates     []FlowRate      `json:"rates"`
+	IfNames   []FlowIfName    `json:"ifnames,omitempty"`
 }
 
 func (s *flowService) tmplPath() string {
@@ -36,6 +37,7 @@ func (s *flowService) loadTemplates() {
 		return
 	}
 	s.tmpls.Import(f.Templates, f.Rates)
+	s.tmpls.ImportIfNames(f.IfNames)
 	infof("flow: loaded %d templates from %s", len(f.Templates), p)
 }
 
@@ -45,7 +47,7 @@ func (s *flowService) saveTemplates() {
 		return
 	}
 	ts, rs := s.tmpls.Snapshot()
-	b, err := json.Marshal(flowTmplFile{Templates: ts, Rates: rs})
+	b, err := json.Marshal(flowTmplFile{Templates: ts, Rates: rs, IfNames: s.tmpls.SnapshotIfNames()})
 	if err != nil {
 		return
 	}

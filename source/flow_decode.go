@@ -86,6 +86,9 @@ type flowTemplates struct {
 	t     map[tmplKey]*FlowTemplate
 	perEx map[netip.Addr]int
 	rates map[rateKey]uint32
+	ifn   map[ifnKey]string
+	// OnLearnIfName is called for an interface name that is new or changed (the cluster replicates it).
+	OnLearnIfName func(FlowIfName)
 	// OnLearn is called, without the lock held, for a template or rate that is new or changed (the cluster replicates it).
 	OnLearn func(*FlowTemplate, *FlowRate)
 }
@@ -547,6 +550,9 @@ func hasVar(t *FlowTemplate) bool {
 // readOptionData picks the sampling interval out of an options record (field 34 samplingInterval, 305 samplingPacketInterval,
 // 50 flowSamplerRandomInterval).  The rate is taken to hold for the whole observation domain, which is what exporters mean.
 func (c *flowTemplates) readOptionData(t *FlowTemplate, body []byte) {
+	if c.readIfNames(t, body) {
+		return
+	}
 	fixed := recLen(t)
 	if fixed == 0 {
 		return

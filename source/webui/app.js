@@ -4335,9 +4335,9 @@
     };
     const RANGES = [["15m", "15 Min"], ["1h", "1 Hour"], ["6h", "6 Hours"], ["1d", "1 Day"], ["7d", "7 Days"], ["30d", "30 Days"], ["90d", "90 Days"], ["all", "All"]];
     const BYS = [["conversation", "Conversations"], ["host", "Hosts"], ["src", "Sources"], ["dst", "Destinations"], ["service", "Services"], ["protocol", "Protocols"],
-      ["flow", "Flows"], ["exporter", "Exporters"], ["interface", "Interfaces"], ["src_as", "Source AS"], ["dst_as", "Destination AS"]];
+      ["flow", "Flows"], ["exporter", "Exporters"], ["interface", "Interfaces"]];
     const METRICS = [["bytes", "Bytes"], ["packets", "Packets"], ["flows", "Flows"]];
-    const NEXT = { host: "conversation", src: "dst", dst: "src", conversation: "service", service: "host", protocol: "service", exporter: "host", interface: "host", src_as: "host", dst_as: "host" };
+    const NEXT = { host: "conversation", src: "dst", dst: "src", conversation: "service", service: "host", protocol: "service", exporter: "host", interface: "host" };
     const TOP = 8;   // the groups the chart draws; the rest of the traffic is "Other"
     const REFRESH_MS = 15000;
     // what the page keeps when it is left and come back to
@@ -4396,7 +4396,7 @@
         case "service": return h("button", { type: "button", class: "qlink", title: "Only this service", onclick: () => drill({ port: g.port, proto: g.proto }) }, svcName(row) + " ", h("span", { class: "muted small" }, (n.proto || g.proto) + "/" + g.port));
         case "protocol": return h("button", { type: "button", class: "qlink", title: "Only this protocol", onclick: () => drill({ proto: g.proto }) }, n.proto || g.proto);
         case "exporter": return h("button", { type: "button", class: "qlink", title: "Only this exporter", onclick: () => drill({ exporter: g.exporter }) }, n.exporter || g.exporter, n.exporter ? h("span", { class: "muted small mono" }, " " + g.exporter) : null);
-        case "interface": return h("button", { type: "button", class: "qlink", title: "Only this interface", onclick: () => drill({ exporter: g.exporter, interface: g.ifindex }) }, (n.exporter || g.exporter) + " ", h("span", { class: "muted small" }, "if " + g.ifindex + " " + g.direction));
+        case "interface": return h("button", { type: "button", class: "qlink", title: "Only this interface", onclick: () => drill({ exporter: g.exporter, interface: g.ifindex }) }, (n.exporter || g.exporter) + " ", h("span", { class: "muted small" }, (n.interface || "if " + g.ifindex) + " " + g.direction));
         default: return h("button", { type: "button", class: "qlink", title: "Only this AS", onclick: () => drill({ as: g.as }) }, "AS " + g.as);
       }
     }
@@ -4408,7 +4408,7 @@
         case "service": return svcName(row) + " " + (n.proto || g.proto) + "/" + g.port;
         case "protocol": return n.proto || g.proto;
         case "exporter": return n.exporter || g.exporter;
-        case "interface": return (n.exporter || g.exporter) + " if " + g.ifindex + " " + g.direction;
+        case "interface": return (n.exporter || g.exporter) + " " + (n.interface || "if " + g.ifindex) + " " + g.direction;
         case "src_as": case "dst_as": return "AS " + g.as;
         default: return g[kept.by] || "";
       }
@@ -4517,18 +4517,22 @@
         h("div", { class: "body" }, c.csv ? c.svg : c)));
       const nodeErr = (r.node_errors || []).length ? h("span", { class: "bad-text small", title: r.node_errors.map((e) => e.node + ": " + e.error).join("\n") }, " " + r.node_errors.length + " of " + r.nodes + " nodes did not answer") : null;
       const byName = (BYS.find(([id]) => id === kept.by) || [, ""])[1];
-      const csvRows = () => [[byName, "Bytes", "Packets", "Flows", "Share (%)", "Average (bits/s)"], ...rows.map((x) => [labelText(x), x.bytes, x.packets, x.flows, csvNum(x.share_pct), csvNum(x.avg_bits_per_sec)])];
+      // a conversation is two addresses: two columns, so the addresses line up row under row (one column let the second start wherever the first ended)
+      const conv = kept.by === "conversation";
+      const csvRows = () => [[...(conv ? ["Host A", "Host B"] : [byName]), "Bytes", "Packets", "Flows", "Share (%)", "Average (bits/s)"],
+        ...rows.map((x) => [...(conv ? [x.group.a, x.group.b] : [labelText(x)]), x.bytes, x.packets, x.flows, csvNum(x.share_pct), csvNum(x.avg_bits_per_sec)])];
       const body = rows.length
         ? h("div", { class: "scroll" }, h("table", { class: "qflows" },
-          h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", {}, byName), h("th", { class: "num" }, "Bytes"), h("th", {}, "Share"), h("th", { class: "num" }, "Average"), h("th", { class: "num" }, "Packets"), h("th", { class: "num" }, "Flows"))),
+          h("thead", {}, h("tr", {}, h("th", {}, ""), ...(conv ? [h("th", {}, "Host A"), h("th", {}, "Host B")] : [h("th", {}, byName)]), h("th", { class: "num" }, "Bytes"), h("th", {}, "Share"), h("th", { class: "num" }, "Average"), h("th", { class: "num" }, "Packets"), h("th", { class: "num" }, "Flows"))),
           h("tbody", {}, rows.map((x, k) => {
             const share = h("span", { class: "qshare " + (k < TOP ? "t" + (k + 1) : "t-other") }, h("span", { class: "qfill" }));
             share.firstChild.style.width = Math.max(0, Math.min(100, x.share_pct || 0)) + "%";
-            return h("tr", {}, h("td", {}, h("span", { class: "sw " + (k < TOP ? "t" + (k + 1) : "t-other") })), h("td", {}, label(x)),
+            return h("tr", {}, h("td", {}, h("span", { class: "sw " + (k < TOP ? "t" + (k + 1) : "t-other") })),
+              ...(conv ? [h("td", {}, addr(x, "a")), h("td", {}, addr(x, "b"))] : [h("td", {}, label(x))]),
               h("td", { class: "num" }, bytes(x.bytes)), h("td", { class: "qsharec" }, share, h("span", { class: "small" }, " " + (x.share_pct || 0).toFixed(1) + "%")),
               h("td", { class: "num" }, bits(x.avg_bits_per_sec || 0)), h("td", { class: "num" }, count(x.packets)), h("td", { class: "num" }, count(x.flows)));
           }),
-          r.other ? h("tr", { class: "muted" }, h("td", {}, h("span", { class: "sw t-other" })), h("td", {}, "Everything smaller"), h("td", { class: "num" }, bytes(r.other.bytes)), h("td", {}, ""), h("td", {}, ""), h("td", { class: "num" }, count(r.other.packets)), h("td", { class: "num" }, count(r.other.flows))) : null)))
+          r.other ? h("tr", { class: "muted" }, h("td", {}, h("span", { class: "sw t-other" })), h("td", { colspan: conv ? "2" : null }, "Everything smaller"), h("td", { class: "num" }, bytes(r.other.bytes)), h("td", {}, ""), h("td", {}, ""), h("td", { class: "num" }, count(r.other.packets)), h("td", { class: "num" }, count(r.other.flows))) : null)))
         : h("div", { class: "empty" }, "No flows in this range.");
       // the filter box lives in this card's header, which is built again on every report: keep the cursor where it was
       const typingNow = document.activeElement === filterIn, at0 = filterIn.selectionStart, at1 = filterIn.selectionEnd;
@@ -4677,11 +4681,11 @@
       const peak = allPts.reduce((m, p) => Math.max(m, p.bytes), 0) * 8 / step;
       clear(tilesEl).append(
         stat("t1", "Exporters heard", count(byRows.length) + (byRows.length >= 50 ? "+" : ""), "of " + count(rows.length) + " known"),
-        stat("t3", "Traffic", bits(tot.bytes * 8 / secs), "peak " + bits(peak)),
+        stat("t7", "Traffic", bits(tot.bytes * 8 / secs), "peak " + bits(peak)),
         stat("t2", "Volume", bytes(tot.bytes), RANGE_WORDS[range] + " · " + count(tot.packets) + " packets"),
         stat("t5", "Flows", count(tot.flows), perSec(tot.flows / secs) + " on average"),
-        stat(silent.length ? "t4" : "t6", "Silent", count(silent.length), silent.length ? "none for 10 min" : "all heard in 10 min", silent.map((e) => e.host || e.name || e.addr).join(", ")),
-        stat("t8", "Busiest", top ? nameOf(top.group.exporter) : "–", top && by.total && by.total.bytes ? Math.round(top.bytes / by.total.bytes * 100) + "% of the traffic" : "", top ? nameOf(top.group.exporter) + " (" + top.group.exporter + ")" : ""));
+        stat(silent.length ? "t8" : "t6", "Silent", count(silent.length), silent.length ? "none for 10 min" : "all heard in 10 min", silent.map((e) => e.host || e.name || e.addr).join(", ")),
+        stat("t4", "Busiest", top ? nameOf(top.group.exporter) : "–", top && by.total && by.total.bytes ? Math.round(top.bytes / by.total.bytes * 100) + "% of the traffic" : "", top ? nameOf(top.group.exporter) + " (" + top.group.exporter + ")" : ""));
       if (!sl) { clear(chartsEl).append(h("div", { class: "empty" }, tot.flows ? "Not enough data yet to draw a chart." : "No flows in this range.")); return; }
       const d = { n: sl.ts.length, start: sl.ts[0], step, from: all.from, to: all.to };
       const bps = dense(sl, allPts, (p) => p.bytes * 8 / step), fpm = dense(sl, allPts, (p) => p.flows / perMin);
@@ -4691,7 +4695,7 @@
       for (const x of byS) for (const p of x.points || []) { const i = sl.idx.get(p.t); if (i != null && (p.flows || p.bytes)) heard[i]++; }
       const cls = ["t1", "t2", "t3", "t4", "t5"], fmt = (v) => (v >= 100 ? Math.round(v) : v.toFixed(v < 10 ? 1 : 0)).toLocaleString();
       clear(chartsEl).append(
-        QCHARTS.lineChart("Traffic", d, [{ label: "All exporters", cls: "t3", values: bps, text: (i) => bits(bps[i]) }], { unit: "bits/s", floor: 1000, axis: (v) => bits(v) }),
+        QCHARTS.lineChart("Traffic", d, [{ label: "All exporters", cls: "t7", values: bps, text: (i) => bits(bps[i]) }], { unit: "bits/s", floor: 1000, axis: (v) => bits(v) }),
         QCHARTS.lineChart("Top exporters", d, topS.map((x, k) => { const v = dense(sl, x.points, (p) => p.bytes * 8 / step); return { label: nameOf(x.group.exporter), cls: cls[k], values: v, text: (i) => bits(v[i]) }; }), { unit: "bits/s", floor: 1000, axis: (v) => bits(v), legend: true }),
         QCHARTS.lineChart("Flows per minute", d, [{ label: "All exporters", cls: "t5", values: fpm, text: (i) => fmt(fpm[i]) + " per minute" }], { unit: "flows per minute", floor: 10, axis: (v) => (Number.isInteger(v) ? v : v.toFixed(1)).toLocaleString() }),
         QCHARTS.lineChart("Exporters heard", d, [{ label: "Exporters", cls: "t1", values: heard, text: (i) => count(heard[i]) + (heard[i] === 1 ? " exporter" : " exporters") }], { unit: "exporters", floor: 4, axis: (v) => (Number.isInteger(v) ? v : v.toFixed(1)) }));

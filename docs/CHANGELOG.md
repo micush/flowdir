@@ -1,5 +1,19 @@
 # Changelog
 
+## [v45] - 2026-11-21 — Flows: interface names
+
+### Added
+
+- **Interfaces show their names.** When an exporter announces the names of its interfaces in its flow data (the interface name or description, sent with the interface number in an options record, by NetFlow v9 or IPFIX), the Interfaces grouping shows `cush wan1 in` in place of `cush if 6 in`. Names are kept per exporter and interface number, so interface 6 of one exporter and interface 6 of another each have their own, they reach every node of the cluster, and they survive a restart. Nothing has to be set up and nothing is asked of the exporter over SNMP. An exporter that sends no names (softflowd and sFlow do not) still shows the interface number.
+
+## [v44] - 2026-11-21 — Monitor ▸ Flows: a conversation is two columns
+
+### Changed
+- In the **Flows** table, grouped by **Conversations**, the two addresses are now two columns, **Host A** and **Host B**, each with its name under it, instead of one column with `A ↔ B` in it. The second address no longer starts wherever the first one ended, so the addresses line up row under row, whatever their length (an IPv4 and an IPv6 address no longer stagger the list). The CSV has the same two columns. Other groupings are unchanged.
+
+### Verified
+- `gofmt`, `go build`, `go vet`, `go test -race -count=1`; `node --check`; the Flows page in headless Chromium (mocked API, dark theme): Host B starts at the same position on every row, IPv6 included, and the other groupings keep their single column; no page errors.
+
 ## [v43] - 2026-11-21 — Monitor ▸ Exporters in alphabetical order
 
 ### Changed
