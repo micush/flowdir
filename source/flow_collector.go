@@ -58,6 +58,8 @@ type FlowExporterInfo struct {
 	// Host is the host part of the name the address reverse-looks-up to (sw1 for sw1.example.com): what Topology calls the exporter.  Empty
 	// while it is not known (the lookup runs in the background) or when the address has no name.
 	Host string `json:"host,omitempty"`
+	// RDNS is the whole name (sw1.example.com), empty when Host is.
+	RDNS string `json:"rdns,omitempty"`
 }
 
 type flowService struct {
@@ -492,7 +494,7 @@ func (s *flowService) Exporters() []FlowExporterInfo {
 	for i := range out {
 		a, _ := netip.ParseAddr(out[i].Addr)
 		if name, known := s.peekName(a); known {
-			out[i].Host = hostPart(name)
+			out[i].Host, out[i].RDNS = hostPart(name), name
 		} else {
 			unknown = append(unknown, a)
 		}

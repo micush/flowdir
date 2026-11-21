@@ -84,8 +84,8 @@ func TestExporterHostIsTheFirstLabelOfItsReverseName(t *testing.T) {
 	s.noteExporter(a, netip.Addr{}, []byte{0, 9, 0, 0}, 1, time.Now())
 	s.noteExporter(b, netip.Addr{}, []byte{0, 9, 0, 0}, 1, time.Now())
 	s.dns.mu.Lock()
-	s.dns.m[a] = dnsEnt{"Sw1.Example.com.", time.Now()}
-	s.dns.m[b] = dnsEnt{"", time.Now()} // looked up: no name
+	s.dns.m[a] = dnsEnt{"Sw1.Example.com.", time.Now(), 0}
+	s.dns.m[b] = dnsEnt{"", time.Now(), 0} // looked up: no name
 	s.dns.mu.Unlock()
 	got := s.Exporters()
 	if len(got) != 2 || got[0].Host != "Sw1" || got[1].Host != "" {

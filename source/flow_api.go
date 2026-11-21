@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -63,6 +64,21 @@ type flowDNS struct {
 type dnsEnt struct {
 	name string
 	at   time.Time
+	ttl  time.Duration // how long this answer stands: dnsTTL for a name or a definite "no name", dnsRetry for a failed lookup
+}
+
+const (
+	dnsTTL   = 30 * time.Minute
+	dnsRetry = time.Minute // a lookup that timed out or failed is tried again after this, not remembered as "no name" for 30 minutes
+	dnsEach  = 2 * time.Second
+)
+
+func (e dnsEnt) fresh() bool {
+	ttl := e.ttl
+	if ttl == 0 {
+		ttl = dnsTTL
+	}
+	return time.Since(e.at) < ttl
 }
 
 func newFlowDNS() *flowDNS { return &flowDNS{m: map[netip.Addr]dnsEnt{}} }
@@ -72,7 +88,7 @@ func (d *flowDNS) peek(a netip.Addr) (string, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	e, ok := d.m[a]
-	return e.name, ok && time.Since(e.at) < 30*time.Minute
+	return e.name, ok && e.fresh()
 }
 
 // names looks addresses up, a few at a time, within the budget; what is not answered in time is left out (and tried again next time).
@@ -84,7 +100,7 @@ func (d *flowDNS) names(addrs []netip.Addr, budget time.Duration) map[netip.Addr
 		if !a.IsValid() {
 			continue
 		}
-		if e, ok := d.m[a]; ok && time.Since(e.at) < 30*time.Minute {
+		if e, ok := d.m[a]; ok && e.fresh() {
 			if e.name != "" {
 				out[a] = e.name
 			}
@@ -107,12 +123,17 @@ func (d *flowDNS) names(addrs []netip.Addr, budget time.Duration) map[netip.Addr
 		go func(a netip.Addr) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			lctx, lc := context.WithTimeout(ctx, 500*time.Millisecond)
+			lctx, lc := context.WithTimeout(ctx, dnsEach)
 			defer lc()
-			names, err := net.DefaultResolver.LookupAddr(lctx, a.String())
-			name := ""
+			names, err := reverseNames(lctx, a.String())
+			name, ttl := "", dnsTTL
 			if err == nil && len(names) > 0 {
 				name = strings.TrimSuffix(names[0], ".")
+			} else if err != nil {
+				var de *net.DNSError
+				if !errors.As(err, &de) || !de.IsNotFound {
+					ttl = dnsRetry // a timeout or a server failure is not an answer
+				}
 			}
 			if err != nil && ctx.Err() != nil {
 				return // out of time: not an answer
@@ -121,7 +142,7 @@ func (d *flowDNS) names(addrs []netip.Addr, budget time.Duration) map[netip.Addr
 			if len(d.m) > 20000 {
 				d.m = map[netip.Addr]dnsEnt{}
 			}
-			d.m[a] = dnsEnt{name, time.Now()}
+			d.m[a] = dnsEnt{name, time.Now(), ttl}
 			d.mu.Unlock()
 			if name != "" {
 				mu.Lock()

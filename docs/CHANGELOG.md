@@ -1,5 +1,30 @@
 # Changelog
 
+## [v42] - 2026-11-21 — Monitor ▸ Exporters: tiles and charts, filter and pager, reverse-DNS names; it moves above MCP
+
+### Added
+- **Monitor ▸ Exporters is laid out like Monitor ▸ Node**: a time range (Last Hour, Day, Week, Month, Custom), six tiles (exporters heard, traffic and its peak, volume and packets, flows, silent exporters, busiest exporter) and four charts drawn with the Node page's chart (hover, CSV): **Traffic**, **Top exporters** (the five busiest), **Flows per minute** and **Exporters heard** per interval. They come from two `/api/flow/report` calls (all exporters, each flow counted once; and by exporter, 50 busiest), so no new server call.
+- **A filter box and a pager** (**« ‹ page › »**, a page box and **per page**, 25 to 500, **25 by default**) on the table. The filter matches the name, address, format and node; the CSV holds the filtered rows.
+- A long name in the **Busiest** tile is cut with an ellipsis (the full name and address are in its tooltip); a tile never grows wider for it.
+- `GET /api/flow/exporters` carries `rdns`, the whole reverse-DNS name, beside `host`, its host part.
+
+### Changed
+- The table's columns are **Name, Address, Format, Last seen, Records, Sampling, Node**. **Name** is the host part of the reverse-DNS name (`sw1` for `sw1.example.com`), else the Configure ▸ Exporters entry name; the tooltip holds both. Before, the page showed only the entry name, so every address in a network entry carried the same name.
+- **Exporters** is the first page under Monitor, above MCP.
+
+### Fixed
+- **A reverse lookup that Go's resolver could not answer found no name where `host` did.** Go may go through the C library (nsswitch, systemd-resolved, mDNS modules), which gives nothing on some hosts. Every reverse lookup (exporter names, the Lookup and Traceroute dialogs, flow report names) now tries that, then Go's own resolver, then a plain PTR query (no EDNS, UDP then TCP) to the nameservers in `/etc/resolv.conf`, as `host` does.
+- **A lookup that timed out was remembered as "no name" for 30 minutes.** Only a name or a definite "not found" is kept 30 minutes now; a timeout or server failure is tried again after a minute, and each lookup waits up to 2 s (was 0.5 s).
+
+### Verified
+- `node --check`; gofmt, `go vet`, `go test -race -count=1 ./...`, `CGO_ENABLED=0` vet and tests, cross-builds for linux/amd64, arm64, arm, 386 and riscv64. New tests: PTR names, a fake DNS server answering a compressed PTR and a not-found, the parser on every truncation of a reply and a self-pointing name, and the retry rule.
+- The page in headless Chromium, light and dark, against a mocked API (60 exporters, a 46-character name): tiles, four charts, truncation, filter and paging, no page errors.
+
+### Not verified
+- Against real exporters, a real DNS server or a cluster. Whether the DNS fallback finds names on a host where Go's resolver does not was tested only against a fake server.
+- The real PAM login check (no authentication code changed; only `webui/`, the lookups and the exporter list).
+- The tiles and charts do not follow the filter box (they cover all exporters). **By exporter** counts the 50 busiest exporters.
+
 ## [v41] - 2026-11-20 — CodeQL alerts: integer conversions and key-file path
 
 ### Fixed

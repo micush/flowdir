@@ -370,7 +370,7 @@
   const NAV_GROUPS = [
     ["Configure", [["cfg_general", "Settings"], ["cfg_groups", "Gateways"], ["cfg_mcp", "MCP"], ["cfg_privacy", "Privacy"], ["cfg_exporters", "Exporters"], ["cfg_web", "Web GUI"], ["cfg_monitoring", "Monitoring"], ["cfg_alerts", "Alerts"], ["cfg_backup", "Backup"], ["anycast", "Anycast"], ["users", "Users"]]],
     ["Operate", [["node", "Node"], ["cluster", "Cluster"], ["anycastop", "Anycast"], ["scheduler", "Scheduler"], ["history", "History"], ["updates", "Upgrade"]]],
-    ["Monitor", [["mcpusage", "MCP"], ["host", "Node"], ["gateways", "Gateways"], ["nodes", "Cluster"], ["exporters", "Exporters"], ["anycaststatus", "Anycast"], ["alerts", "Alerts"], ["capture", "Capture"], ["log", "Log"]]],
+    ["Monitor", [["exporters", "Exporters"], ["mcpusage", "MCP"], ["host", "Node"], ["gateways", "Gateways"], ["nodes", "Cluster"], ["anycaststatus", "Anycast"], ["alerts", "Alerts"], ["capture", "Capture"], ["log", "Log"]]],
   ];
   const TABS = [["flow", FLOW], ["topology", TOPO]].concat(NAV_GROUPS.flatMap(([, items]) => items));
   const groupOf = (id) => (id === "flow" ? FLOW : id === "topology" ? TOPO : (NAV_GROUPS.find(([, items]) => items.some(([i]) => i === id)) || [null])[0]);
@@ -4012,6 +4012,7 @@
   // ── Node, Monitor  (CLI: --host) ─────────────────────────────────────────────
   // CPU, memory, disk and network use of the machine, sampled every 10 s by the daemon and
   // kept in memory for 30 days.  The picked node (top-bar Node menu) is the one shown.
+  const QCHARTS = {};   // the Node page's line chart, which the Exporters page draws its charts with
   VIEWS.host = (() => {
     const SVGNS = "http://www.w3.org/2000/svg";
     const sv = (tag, attrs, ...kids) => {
@@ -4045,7 +4046,7 @@
 
     // One line chart: series = [{ label, cls, values, text(i) }]; values below 0 are gaps.
     function lineChart(title, d, series, o) {
-      const n = d.cpu.length;
+      const n = d.n != null ? d.n : d.cpu.length;
       const peak = Math.max(0, ...series.flatMap((s) => s.values));
       const max = o.fixedMax || niceMax(peak, o.floor || 10);
       const W = 620, H = 230, L = axisMargin([0, 1, 2, 3, 4].map((g) => o.axis((max * g) / 4)), 62), R = 12, T = 12, B = 28, pw = W - L - R, ph = H - T - B;
@@ -4097,6 +4098,8 @@
       };
       return h("div", { class: "card" }, h("header", { class: "bar" }, h("h2", {}, tc(title)), h("span", { class: "grow" }), csvButton(title, sampleRows)), h("div", { class: "body" }, legend, svg));
     }
+
+    QCHARTS.lineChart = lineChart;
 
     function draw(d) {
       const n = d.now;
@@ -4592,13 +4595,131 @@
     };
   })();
 
-  // ── Exporters, Monitor  (API: GET /api/flow/exporters) ───────────────────────────
-  // Who is sending flows to the cluster: one row to an exporter, its records added up across the nodes that heard it.
+  // ── Exporters, Monitor  (API: GET /api/flow/exporters, GET /api/flow/report) ─────
+  // Who is sending flows to the cluster, laid out like Monitor ▸ Node: a time range, tiles, four charts and the table of exporters, one
+  // row to an exporter, its records added up across the nodes that heard it.  The tiles and charts are two reports (all exporters
+  // together, counting each flow once; and by exporter, for the busiest ones and how many were heard).
   VIEWS.exporters = (() => {
     const REFRESH_MS = 5000;
+    const RANGES = [["1h", "Last Hour"], ["1d", "Last Day"], ["7d", "Last Week"], ["30d", "Last Month"], ["custom", "Custom"]];
+    const RANGE_WORDS = { "1h": "last hour", "1d": "last day", "7d": "last week", "30d": "last month", custom: "this range" };
     let box, bad, seq = 0, lastAt = 0;
+    let range = "1h", rangeBtns, fromIn, toIn, customRow, tilesEl, chartsEl, rep = null, repAt = 0, repSeq = 0;
     const count = (v) => (Number(v) || 0).toLocaleString();
     const ago = (u) => { const s = Math.max(0, Math.floor(Date.now() / 1000 - u)); return s < 90 ? s + " s ago" : s < 5400 ? Math.round(s / 60) + " min ago" : s < 172800 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago"; };
+    const bits = (v) => (v >= 1e9 ? (v / 1e9).toFixed(2) + " Gb/s" : v >= 1e6 ? (v / 1e6).toFixed(v >= 1e8 ? 0 : 2) + " Mb/s" : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e5 ? 0 : 1) + " kb/s" : Math.round(v) + " b/s");
+    const bytes = (v) => { let f = Number(v) || 0; for (const u of ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]) { if (f < 1024 || u === "PiB") return (u === "B" ? f : f.toFixed(1)) + " " + u; f /= 1024; } return ""; };
+    const perSec = (v) => (v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(1) : v.toFixed(2).replace(/0$/, "")) + "/s";
+    // the filter, pager and CSV button are made once (a refresh only swaps the rows, so typing in the box is not interrupted)
+    const kept = { q: "", page: 0, size: 25 };
+    let rows = [], card = null, filter, countEl, pageIn, pagesEl, pager, sizeSel, bodyEl, csv, btns;
+    const hay = (e) => [e.host, e.name, e.rdns, e.addr, e.format, e.node].filter(Boolean).join(" ").toLowerCase();
+    const visible = () => { const flt = parseFilter(kept.q); return flt.empty ? rows : rows.filter((e) => flt.match((w) => hay(e).includes(w))); };
+    const nameOf = (addr) => { const e = rows.find((x) => x.addr === addr); return (e && (e.host || e.name)) || addr; };
+    function build() {
+      const mkBtn = (label, title, to) => h("button", { type: "button", class: "btn small", title, "aria-label": title, onclick: () => { kept.page = to(); render(); } }, label);
+      btns = [mkBtn("«", "First page", () => 0), mkBtn("‹", "Previous page", () => kept.page - 1), mkBtn("›", "Next page", () => kept.page + 1), mkBtn("»", "Last page", () => 1e9)];
+      filter = h("input", { type: "text", class: "policy-filter", placeholder: "Filter rows", "aria-label": "Filter exporters", autocomplete: "off", spellcheck: "false", value: kept.q,
+        oninput: () => { kept.q = filter.value; kept.page = 0; render(); } });
+      countEl = h("span", { class: "policy-count muted" }, "");
+      pageIn = h("input", { type: "number", min: "1", class: "policy-page", "aria-label": "Page number", onchange: (e) => { kept.page = (parseInt(e.target.value, 10) || 1) - 1; render(); } });
+      pagesEl = h("span", { class: "muted" }, "");
+      pager = h("span", { class: "policy-pager" }, btns[0], btns[1], pageIn, pagesEl, btns[2], btns[3]);
+      sizeSel = h("select", { "aria-label": "Exporters per page", onchange: (e) => { kept.size = Number(e.target.value); kept.page = 0; render(); } },
+        [25, 50, 100, 250, 500].map((n) => h("option", { value: String(n) }, n + " per page")));
+      sizeSel.value = String(kept.size);
+      csv = csvButton("Flow exporters", () => [["Exporter", "Name", "DNS name", "Format", "First seen (UTC)", "Last seen (UTC)", "Datagrams", "Records", "Sampling", "Node"],
+        ...visible().map((e) => [e.addr, e.name || "", e.rdns || "", e.format, csvIso(e.first_seen), csvIso(e.last_seen), e.datagrams, e.records, e.sampling_rate || "", e.node || ""])]);
+      bodyEl = h("div", { class: "body flush" });
+      card = h("div", { class: "card" }, h("header", { class: "bar" }, h("h2", {}, tc("Exporters")), h("span", { class: "grow" }), csv),
+        h("div", { class: "body" }, h("div", { class: "policy-bar" }, filter, countEl, h("span", { class: "grow" }), pager, sizeSel)), bodyEl);
+      return card;
+    }
+    function render() {
+      const vis = visible(), size = kept.size, n = Math.max(1, Math.ceil(vis.length / size));
+      kept.page = Math.min(Math.max(kept.page, 0), n - 1);
+      const from = kept.page * size, list = vis.slice(from, from + size), filtered = vis.length !== rows.length;
+      countEl.textContent = vis.length ? (from + 1) + "–" + Math.min(from + size, vis.length) + " of " + vis.length + (filtered ? " (filtered from " + rows.length + ")" : "") : (filtered ? "0 of " + rows.length : "");
+      pager.hidden = n < 2;
+      pageIn.value = String(kept.page + 1); pageIn.max = String(n); pagesEl.textContent = "of " + n;
+      btns[0].disabled = btns[1].disabled = kept.page === 0;
+      btns[2].disabled = btns[3].disabled = kept.page >= n - 1;
+      csv.hidden = !vis.length;
+      clear(bodyEl).append(list.length
+        ? h("div", { class: "scroll" }, h("table", {},
+          h("thead", {}, h("tr", {}, ["Name", "Address", "Format", "Last seen", "Records", "Sampling", "Node"].map((x, i) => h("th", { class: i === 4 || i === 5 ? "num" : "" }, x)))),
+          h("tbody", {}, list.map((e) => h("tr", { class: Date.now() / 1000 - e.last_seen > 600 ? "muted" : "", oncontextmenu: rowMenu(netToolMenu(e.addr)) },
+            h("td", { title: [e.rdns ? "DNS name: " + e.rdns : "", e.name && e.name !== e.host ? "Exporters entry: " + e.name : ""].filter(Boolean).join("\n") }, e.host || e.name || "–"),
+            h("td", { class: "mono" }, e.addr), h("td", {}, e.format || "–"),
+            h("td", {}, ago(e.last_seen)), h("td", { class: "num" }, count(e.records)), h("td", { class: "num" }, e.sampling_rate ? "1 in " + e.sampling_rate : "–"), h("td", { class: "mono" }, e.node || "–"))))))
+        : h("div", { class: "empty" }, rows.length ? "No exporter matches." : "No exporter has sent anything yet."));
+    }
+    // ── tiles and charts ──
+    const stat = (cls, label, value, sub, title) => h("div", { class: "qtile qtrunc " + cls, title: title || null }, h("div", { class: "qv trunc" }, value), h("div", { class: "qs trunc" }, sub || " "), h("div", { class: "ql" }, label));
+    // the time slots of a report: from its first to the last that has data, never the slot still being filled (it would draw as a fall to zero)
+    function slots(all) {
+      const tot = (all.series || []).find((x) => !x.group);
+      const step = all.step_sec || 60, t0 = Math.floor(all.from / step) * step;
+      if (!tot || !(tot.points || []).length) return null;
+      const lastT = Math.max(...tot.points.map((p) => p.t)), ts = [];
+      for (let t = t0, now = Date.now() / 1000; t <= lastT && t + step <= now; t += step) ts.push(t);
+      return ts.length < 2 ? null : { ts, step, idx: new Map(ts.map((t, i) => [t, i])) };
+    }
+    const dense = (sl, points, f) => { const v = new Array(sl.ts.length).fill(0); for (const p of points || []) { const i = sl.idx.get(p.t); if (i != null) v[i] = f(p); } return v; };
+    function drawReports() {
+      if (!tilesEl) return;
+      if (!rep) { clear(tilesEl); clear(chartsEl); return; }
+      const { all, by } = rep;
+      const secs = Math.max(1, all.to - all.from), tot = all.total || {}, sl = slots(all);
+      const step = all.step_sec || 60, perMin = step / 60;
+      const byRows = by.rows || [], silent = rows.filter((e) => Date.now() / 1000 - e.last_seen > 600), top = byRows[0];
+      const allPts = ((all.series || []).find((x) => !x.group) || {}).points || [];
+      const peak = allPts.reduce((m, p) => Math.max(m, p.bytes), 0) * 8 / step;
+      clear(tilesEl).append(
+        stat("t1", "Exporters heard", count(byRows.length) + (byRows.length >= 50 ? "+" : ""), "of " + count(rows.length) + " known"),
+        stat("t3", "Traffic", bits(tot.bytes * 8 / secs), "peak " + bits(peak)),
+        stat("t2", "Volume", bytes(tot.bytes), RANGE_WORDS[range] + " · " + count(tot.packets) + " packets"),
+        stat("t5", "Flows", count(tot.flows), perSec(tot.flows / secs) + " on average"),
+        stat(silent.length ? "t4" : "t6", "Silent", count(silent.length), silent.length ? "none for 10 min" : "all heard in 10 min", silent.map((e) => e.host || e.name || e.addr).join(", ")),
+        stat("t8", "Busiest", top ? nameOf(top.group.exporter) : "–", top && by.total && by.total.bytes ? Math.round(top.bytes / by.total.bytes * 100) + "% of the traffic" : "", top ? nameOf(top.group.exporter) + " (" + top.group.exporter + ")" : ""));
+      if (!sl) { clear(chartsEl).append(h("div", { class: "empty" }, tot.flows ? "Not enough data yet to draw a chart." : "No flows in this range.")); return; }
+      const d = { n: sl.ts.length, start: sl.ts[0], step, from: all.from, to: all.to };
+      const bps = dense(sl, allPts, (p) => p.bytes * 8 / step), fpm = dense(sl, allPts, (p) => p.flows / perMin);
+      const byS = (by.series || []).filter((x) => x.group && x.group.exporter);
+      const topS = byRows.slice(0, 5).map((r) => byS.find((x) => x.group.exporter === r.group.exporter)).filter(Boolean);
+      const heard = new Array(sl.ts.length).fill(0);
+      for (const x of byS) for (const p of x.points || []) { const i = sl.idx.get(p.t); if (i != null && (p.flows || p.bytes)) heard[i]++; }
+      const cls = ["t1", "t2", "t3", "t4", "t5"], fmt = (v) => (v >= 100 ? Math.round(v) : v.toFixed(v < 10 ? 1 : 0)).toLocaleString();
+      clear(chartsEl).append(
+        QCHARTS.lineChart("Traffic", d, [{ label: "All exporters", cls: "t3", values: bps, text: (i) => bits(bps[i]) }], { unit: "bits/s", floor: 1000, axis: (v) => bits(v) }),
+        QCHARTS.lineChart("Top exporters", d, topS.map((x, k) => { const v = dense(sl, x.points, (p) => p.bytes * 8 / step); return { label: nameOf(x.group.exporter), cls: cls[k], values: v, text: (i) => bits(v[i]) }; }), { unit: "bits/s", floor: 1000, axis: (v) => bits(v), legend: true }),
+        QCHARTS.lineChart("Flows per minute", d, [{ label: "All exporters", cls: "t5", values: fpm, text: (i) => fmt(fpm[i]) + " per minute" }], { unit: "flows per minute", floor: 10, axis: (v) => (Number.isInteger(v) ? v : v.toFixed(1)).toLocaleString() }),
+        QCHARTS.lineChart("Exporters heard", d, [{ label: "Exporters", cls: "t1", values: heard, text: (i) => count(heard[i]) + (heard[i] === 1 ? " exporter" : " exporters") }], { unit: "exporters", floor: 4, axis: (v) => (Number.isInteger(v) ? v : v.toFixed(1)) }));
+    }
+    async function loadReports() {
+      const my = ++repSeq;
+      try {
+        let qs = "range=" + range;
+        if (range === "custom") {
+          const a = new Date(fromIn.value), b = new Date(toIn.value);
+          if (isNaN(a) || isNaN(b) || a >= b) throw new Error("Pick a start that is before the end.");
+          qs = "from=" + Math.floor(a / 1000) + "&to=" + Math.floor(b / 1000);
+        }
+        const [a, b] = await Promise.all([api("GET", "/api/flow/report?" + qs + "&series=1"), api("GET", "/api/flow/report?" + qs + "&series=1&by=exporter&limit=50")]);
+        if (my !== repSeq) return;
+        repAt = Date.now(); rep = { all: a.data, by: b.data }; drawReports();
+      } catch (e) { if (my === repSeq) { rep = null; clear(tilesEl); fail(clear(chartsEl))(e); } }
+    }
+    function setRange(r) {
+      range = r;
+      for (const [id, b] of rangeBtns) b.setAttribute("aria-pressed", id === r ? "true" : "false");
+      customRow.classList.toggle("hidden", r !== "custom");
+      if (r === "custom" && !fromIn.value) {
+        const f = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        toIn.value = f(new Date()); fromIn.value = f(new Date(Date.now() - 6 * 3600 * 1000));
+      }
+      if (r !== "custom") loadReports();
+    }
     function draw(exporters) {
       // one row per exporter: an exporter heard by two nodes (its traffic moves with the active gateway) is one, with the records added up and
       // the nodes listed, the one that heard it last first
@@ -4609,19 +4730,15 @@
         m.records += e.records || 0; m.datagrams += e.datagrams || 0;
         m.first_seen = Math.min(m.first_seen || e.first_seen, e.first_seen || m.first_seen);
         if (!m.name && e.name) m.name = e.name;
+        if (!m.host && e.host) m.host = e.host;
+        if (!m.rdns && e.rdns) m.rdns = e.rdns;
         if (!m.sampling_rate && e.sampling_rate) m.sampling_rate = e.sampling_rate;
         if (e.node && !m.nodes.includes(e.node)) m.nodes.push(e.node);
       }
-      const rows = [...by.values()].map((e) => ({ ...e, node: e.nodes.join(", ") }));
-      const body = rows.length
-        ? h("div", { class: "scroll" }, h("table", {},
-          h("thead", {}, h("tr", {}, ["Exporter", "Format", "Last seen", "Records", "Sampling", "Node"].map((x, i) => h("th", { class: i === 3 || i === 4 ? "num" : "" }, x)))),
-          h("tbody", {}, rows.map((e) => h("tr", { class: Date.now() / 1000 - e.last_seen > 600 ? "muted" : "", oncontextmenu: rowMenu(netToolMenu(e.addr)) }, h("td", {}, e.name ? e.name + " " : "", h("span", { class: e.name ? "muted small mono" : "mono" }, e.addr)), h("td", {}, e.format),
-            h("td", {}, ago(e.last_seen)), h("td", { class: "num" }, count(e.records)), h("td", { class: "num" }, e.sampling_rate ? "1 in " + e.sampling_rate : "–"), h("td", { class: "mono" }, e.node || "–"))))))
-        : h("div", { class: "empty" }, "No exporter has sent anything yet.");
-      clear(box).append(h("div", { class: "card" }, h("header", { class: "bar" }, h("h2", {}, tc("Exporters")), h("span", { class: "grow" }),
-        rows.length ? csvButton("Flow exporters", () => [["Exporter", "Name", "Format", "First seen (UTC)", "Last seen (UTC)", "Datagrams", "Records", "Sampling", "Node"],
-          ...rows.map((e) => [e.addr, e.name || "", e.format, csvIso(e.first_seen), csvIso(e.last_seen), e.datagrams, e.records, e.sampling_rate || "", e.node || ""])]) : null), h("div", { class: "body flush" }, body)));
+      rows = [...by.values()].map((e) => ({ ...e, node: e.nodes.join(", ") }));
+      if (!card) box.append(build());
+      render();
+      if (rep) drawReports();   // the names and the silent count come from this list
     }
     async function load() {
       const my = ++seq;
@@ -4632,12 +4749,21 @@
         clear(bad);
         draw((r.data && r.data.exporters) || []);
       } catch (e) { fail(bad)(e); }
+      if (range !== "custom" && Date.now() - repAt >= (range === "1h" ? 15000 : 60000)) loadReports();
     }
     return {
       mount(main) {
-        bad = h("div", { "aria-live": "polite" }); box = h("div", {});
-        main.append(bad, box);
+        bad = h("div", { "aria-live": "polite" }); box = h("div", {}); card = null; rep = null; repAt = 0;
+        rangeBtns = new Map(RANGES.map(([id, label]) => [id, h("button", { type: "button", class: "seg", "aria-pressed": id === range ? "true" : "false", onclick: () => setRange(id) }, label)]));
+        fromIn = h("input", { type: "datetime-local", "aria-label": "From" });
+        toIn = h("input", { type: "datetime-local", "aria-label": "To" });
+        customRow = h("span", { class: "qcustom hidden" }, fromIn, " to ", toIn,
+          h("button", { class: "btn", type: "button", onclick: loadReports }, "Apply"));
+        const bar = h("div", { class: "toolbar qbar" }, h("span", { class: "segs", role: "group", "aria-label": "Time range" }, [...rangeBtns.values()]), customRow);
+        tilesEl = h("div", { class: "qtiles" }); chartsEl = h("div", { class: "hostcharts" });
+        main.append(bad, bar, tilesEl, chartsEl, box);
         load();
+        setRange(range);
       },
       async poll() { if (Date.now() - lastAt >= REFRESH_MS) await load(); },
     };
