@@ -1,5 +1,11 @@
 # Changelog
 
+## [v51] - 2026-11-22 — Charts over hours no longer spike once an hour
+
+### Fixed
+
+- **A chart over several hours showed one spike an hour with nothing between.** Whole hours are read from the hourly rollups, and a chart with points narrower than an hour put all of an hour's traffic into the one point that held the top of the hour, leaving the points around it empty. (The hour or two that were still held by the minute, such as the oldest hour after a restart, looked right, which is why part of the 6 Hours chart was smooth.) An hour is now shared among the points it covers in proportion to how much of the hour each covers, so the line is level across it. The totals and tables are unchanged, and the points still add up to the total. A minute still lands in one point. The ten-minute-wide points of a six-hour chart show an hour's average, since the hourly rollup has no finer detail.
+
 ## [v50] - 2026-11-21 — Memory cap defaults to 70%
 
 ### Changed

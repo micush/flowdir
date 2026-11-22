@@ -164,12 +164,42 @@ func (a *qAcc) finish(by string) {
 	a.addr, a.pair, a.small = nil, nil, nil
 }
 
-// accBucket adds one bucket to a, as a query q sees it.  lose is q.Losers as a set; step is the series step (0: a report).
-func accBucket(a *qAcc, b *flowBucket, q *FlowQuery, lose map[flowLoser]struct{}, step int64) {
-	slot := b.TS
-	if step > 0 {
-		slot = b.TS / step * step
+// spreadAdd adds v, what a bucket of span seconds starting at ts counted, to the points of a series that are step seconds wide.  A minute
+// lands in one point.  An hour that is wider than a point is shared among the points it covers, in proportion to how much of the hour
+// each covers: it was counted over the whole hour, and putting it all in the point that holds the hour's start made a spike at every
+// hour with nothing between.  The parts add up to v exactly (the last point takes what is left).
+func spreadAdd(m map[int64]flowVal, ts, span, step int64, v flowVal) {
+	if span <= step || span <= 0 {
+		slot := ts / step * step
+		c := m[slot]
+		c.add(v)
+		m[slot] = c
+		return
 	}
+	end := ts + span
+	left := v
+	for s := ts / step * step; s < end; s += step {
+		lo, hi := s, s+step
+		if lo < ts {
+			lo = ts
+		}
+		if hi > end {
+			hi = end
+		}
+		part := left
+		if hi < end {
+			ov, sp := uint64(hi-lo), uint64(span)
+			part = flowVal{v.Bytes * ov / sp, v.Packets * ov / sp, v.Flows * ov / sp}
+		}
+		c := m[s]
+		c.add(part)
+		m[s] = c
+		left = flowVal{left.Bytes - part.Bytes, left.Packets - part.Packets, left.Flows - part.Flows}
+	}
+}
+
+// accBucket adds one bucket to a, as a query q sees it.  lose is q.Losers as a set; step is the series step (0: a report).
+func accBucket(a *qAcc, b *flowBucket, q *FlowQuery, lose map[flowLoser]struct{}, step, span int64) {
 	if b.Trunc > 0 {
 		a.approx = true
 	}
@@ -220,9 +250,7 @@ func accBucket(a *qAcc, b *flowBucket, q *FlowQuery, lose map[flowLoser]struct{}
 		}
 		total.add(v)
 		if step > 0 {
-			c := a.tot[slot]
-			c.add(v)
-			a.tot[slot] = c
+			spreadAdd(a.tot, b.TS, span, step, v)
 		}
 		if q.By == "" {
 			continue
@@ -287,9 +315,7 @@ func accBucket(a *qAcc, b *flowBucket, q *FlowQuery, lose map[flowLoser]struct{}
 						m = map[int64]flowVal{}
 						a.per[g] = m
 					}
-					p := m[slot]
-					p.add(v)
-					m[slot] = p
+					spreadAdd(m, b.TS, span, step, v)
 				}
 			})
 		}
@@ -701,7 +727,7 @@ func (s *flowStore) accumulate(q *FlowQuery, lose map[flowLoser]struct{}, step i
 		if ck != nil && t.span == 3600 {
 			p := newQAcc(0)
 			p.hint = len(b.M)
-			accBucket(p, b, q, lose, 0)
+			accBucket(p, b, q, lose, 0, t.span)
 			if useTrunc {
 				p.truncate(truncN)
 			}
@@ -709,7 +735,7 @@ func (s *flowStore) accumulate(q *FlowQuery, lose map[flowLoser]struct{}, step i
 			accs[wi].merge(p)
 			return
 		}
-		accBucket(accs[wi], b, q, lose, step)
+		accBucket(accs[wi], b, q, lose, step, t.span)
 	})
 	var out *qAcc // the biggest accumulators are not copied: the rest is added into the first
 	for _, a := range accs {
@@ -866,7 +892,7 @@ func prewarm(b *flowBucket) {
 			continue
 		}
 		p := newQAcc(0)
-		accBucket(p, b, q, nil, 0)
+		accBucket(p, b, q, nil, 0, 0)
 		qcache.put(ck, b.TS, sig, len(b.M), p)
 	}
 }

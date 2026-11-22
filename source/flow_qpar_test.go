@@ -436,3 +436,56 @@ func TestNthLargest(t *testing.T) {
 		}
 	}
 }
+
+// An hour that is wider than a point of the series is shared among the points: before, all of it went into the point that held the
+// top of the hour, so a chart with ten-minute points showed one spike an hour and nothing between.
+func TestHourlySeriesIsSpreadOverFinerPoints(t *testing.T) {
+	s := newTestFlowSvc().store
+	from, to := fillHours(s, 3, 50)
+	for _, step := range []int{600, 1440, 3600} {
+		a := s.Query(FlowQuery{From: from, To: to, Step: step, NoDedupe: true})
+		if len(a.Series) == 0 {
+			t.Fatalf("step %d: no series", step)
+		}
+		var sum, zero uint64
+		for _, p := range a.Series[0].Points {
+			sum += p.Bytes
+			if p.Bytes == 0 {
+				zero++
+			}
+		}
+		if sum+3*7 != a.Total.Bytes { // the total also holds each hour's "other" (7 bytes in fillHours), which no point does
+			t.Errorf("step %d: the points add up to %d, the total is %d", step, sum, a.Total.Bytes)
+		}
+		want := int(3 * 3600 / step)
+		if step == 1440 {
+			want = 8 // 3 hours = 10800 s cover 8 points of 1440 s (the first starts before the range)
+		}
+		if got := len(a.Series[0].Points); got < want {
+			t.Errorf("step %d: %d points, want at least %d (an empty point between hours)", step, got, want)
+		}
+	}
+}
+
+func TestSpreadAdd(t *testing.T) {
+	m := map[int64]flowVal{}
+	spreadAdd(m, 3600, 3600, 1000, flowVal{3601, 7, 2})
+	var sum flowVal
+	for _, v := range m {
+		sum.add(v)
+	}
+	if sum != (flowVal{3601, 7, 2}) {
+		t.Errorf("parts add up to %v", sum)
+	}
+	if len(m) != 5 { // 3600..7200 in 1000-second points starting at 3000
+		t.Errorf("%d points: %v", len(m), m)
+	}
+	if m[3000].Bytes == 0 || m[3000].Bytes >= m[4000].Bytes {
+		t.Errorf("the first point holds only a part (600 of 1000 s): %v", m)
+	}
+	m = map[int64]flowVal{}
+	spreadAdd(m, 3600, 60, 600, flowVal{10, 1, 1}) // a minute: one point
+	if len(m) != 1 || m[3600].Bytes != 10 {
+		t.Errorf("a minute: %v", m)
+	}
+}
