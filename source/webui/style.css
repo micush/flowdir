@@ -900,3 +900,11 @@ table.policy.rows.t-devices th:nth-child(8) { width: 8rem; } table.policy.rows.t
 dialog.cv-dialog.nettool { overflow: visible; }
 .nettool-out { max-height: 50vh; overflow: auto; margin: 0; padding: .6rem .8rem; background: var(--surface-2); border-radius: 6px; white-space: pre-wrap; }
 dialog.cv-dialog .toolbar.nettool-bar { display: flex; justify-content: flex-end; position: static; padding: 0; margin: 1rem 0 0; }
+
+/* Updates ▸ Nodes: the node name gets the room, the versions are narrow, the pills sit together; all left-aligned */
+table.evencols { table-layout: fixed; width: 100%; }
+table.evencols th.w-cb { width: 3rem; }
+table.evencols th.w-node { width: 26%; }
+table.evencols th.w-ver { width: 11%; }
+table.evencols th.w-pill { width: 15%; }
+table.evencols td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
